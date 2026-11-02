@@ -1,6 +1,6 @@
 # 05 依据、假设与许可边界
 
-调研日期：2026-11-02。只读核对；未编译新程序、未重跑已有 DNS 验证、未操作实际路由器。
+调研日期：2026-11-02，含第一轮审查复核。只读核对；未编译新程序、未重跑已有 DNS 验证、未操作实际路由器。
 
 ## 1. 本地项目证据
 
@@ -25,7 +25,15 @@
 - [dns2tcp](https://github.com/zfl9/dns2tcp)：UDP→TCP 转换的窄职责；不是完整策略引擎。
 - 候选协议库：[Hickory DNS](https://github.com/hickory-dns/hickory-dns)。候选异步运行时：[Tokio](https://github.com/tokio-rs/tokio)。本轮未完成依赖审计或 API 适配验证。
 
-上游链接目前指向 master，仅证明调研所见。无法用 GitHub API 查询最新 commit（本次请求返回 403）；不在文档中编造固定 hash 或精确最后更新时间。P0 必须固定准确版本再建立对照测试。
+基线现固定为 `23af4b1b924fd06c67997fe35840ec7f8064ca31`，tree `3f7eb6fb8aefcc7cb51e0c14c47856764f95aed4`；本轮通过 `gh api` 独立核对提交对象，日期 `2025-08-09T09:18:06Z`、message `release: 2025.08.09`。后续对照使用该版本而非 master；二进制/构建 feature 尚未固定。
+
+固定源码补充：
+
+- [dns.c](https://github.com/zfl9/chinadns-ng/blob/23af4b1b924fd06c67997fe35840ec7f8064ca31/src/dns.c)：`test_ip()` 第一条 A/AAAA 决定，无 owner 链校验；`dns_empty_reply()` 返回 NODATA；`dns_add_ip()` 也不做链归属验证。
+- [ipset.c](https://github.com/zfl9/chinadns-ng/blob/23af4b1b924fd06c67997fe35840ec7f8064ca31/src/ipset.c)：`init_testmsg_nftset()` 发 GETSETELEM，`test_res_nftset()` 根据应答判断成员；不是先 dump 全表。
+- [Linux v6.18.52 nft_set_rbtree.c](https://github.com/gregkh/linux/blob/v6.18.52/net/netfilter/nft_set_rbtree.c)：`nft_rbtree_get()` → `nft_array_get_cmp()` 包含区间内部匹配，反证审查 B2 的普遍否定。仅核对源码，未实际内核测试。
+
+审查报告还提供上游文件/行号证据：`server.zig` 的过滤/TC 路径、`opt.zig` 的 noip-as-chnip 默认值、`ip6_filter.zig` 的按组/分类规则，以及源码 49 文件约 310 KB 的规模统计。后者是审查者提供的数据，本文未独立重计；不要用源码体积推导重写工期。
 
 ## 3. 协议审查参考
 
@@ -44,7 +52,7 @@
 
 1. 候选协议库在所需 feature 下能安全处理未知 RR/压缩/EDNS，同时满足资源预算。
 2. Tokio 单 worker 与选定 netlink 实现能够在慢上游和重载下保持国内查询响应。
-3. 真实 OpenWrt 内核 interval 集合查询/写入能通过小而可维护的 Rust 模块实现。
+3. 所选分类后端（实时内核 GETSETELEM 或同源快照）在实际目标上正确且可维护；写入后端独立验证。源码能反证“不存在”，但不能替代部署验证。
 4. 目标 SDK、musl、Rust 依赖及 CPU 特性组合可稳定交叉构建并运行。
 5. 规则与缓存预算适合首轮目标设备；本稿没有任何新引擎实测数字。
 6. 外层生命周期能支持集合屏障与配置 ACK；不支持时需修改集成或降低保证。
@@ -56,4 +64,5 @@
 - 若走独立实现，应按公开行为/协议编写自己的规格和测试；保留来源与设计依据。已阅读上游代码的事实应如实记录，不能声称采用未经实施的 clean-room 流程。
 - 若决定改编上游，明确采用满足其许可的路线，不以变量改名或语言变化规避 AGPL；独立进程边界也不是规避许可的万能保证。
 - 所有者审定项目许可证后，才添加 LICENSE、Cargo 元数据与对外复用承诺；依赖、数据、代码和文档许可分别核对。
+- `res/*.txt`、chnlist/gfwlist、抓包和对照测试夹具也需逐项登记来源/许可。优先生成合成测试域名与伪应答；不因“数据不是代码”而整包复制上游资源。
 - 公开发布前检查对应源码、构建脚本、依赖许可通知和第三方归属。需要法律确定性的部分寻求专业审查，本文不是法律意见。
