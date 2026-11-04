@@ -31,6 +31,7 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 ```
 任务：完成 aether-dns 仓库的任务卡 <卡号>（Rust 行为等价重写 chinadns-ng，当前里程碑 M1）。
 
+卡片版本：<main commit>（发卡时填写；本卡以该提交的 docs/tasks/m1.md 为准）。
 本卡只有一个目标，就是任务卡的「单一目标」；本卡只有一个完成标准，就是任务卡的「验收」。
 不要用卡外的改进、顺手修复或额外测试替代验收；做不到就停，不扩成第二张卡的内容。
 
@@ -46,6 +47,10 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 2. PLAN.md 的 M1 与 P0 范围、M0-REPORT.md 中与本卡相关的章节
 3. IMPROVEMENTS.md 中已批准的条目（尤其是 IMP-004/005）
 4. 任务卡本身（docs/tasks/m1.md 中对应小节）
+
+开工第一步后，先核对卡片版本；非 0 就停，不要按旧卡实现：
+  git -C <worktree> diff --quiet main -- docs/tasks/m1.md docs/tasks/README.md PLAN.md
+非 0 表示 worktree 里的卡/文档不是当前 main 版本：向设计负责人要「卡差量」或重建 worktree。
 
 只做任务卡范围内的事。设计文档没覆盖、或卡上写了「停点」的情况，不要自行决定：
 按最保守方式实现并标注 TODO(design)，写进报告，然后**停下询问**。
@@ -167,7 +172,26 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 
 ---
 
-## 9. 当前卡组
+## 9. 发卡前检查（强制，设计负责人）
+
+每张卡进入入口提示前，逐项打勾；任何一项不过，不发卡：
+
+1. **单一目标 + 可执行验收**：命令、退出码、输出/断言；Rust 测试命令写 `cargo test --test <target>`，
+   不用 `cargo test <名字>` 猜过滤。
+2. **允许改动完整**：实现会碰的每个文件，包括 `Cargo.toml`/`Cargo.lock`、模块声明、测试数据、报告；
+   在空 worktree 里预演 `git status`，确认不会出现“卡外文件”。
+3. **外部引用明确**：每个仓库外文件写「只读」还是「提供副本」，入口提示重复；禁止“不要碰”这种
+   会被理解成“不能读”的措辞。
+4. **文档一致**：与 CHARTER/PLAN/IMPROVEMENTS/M0-REPORT 对照；冲突先改文档，不改卡绕开。
+5. **卡片冻结**：`main` 干净并提交后才创建 worktree；入口提示写明 `卡片版本 = <main commit>`。
+6. **空跑**：用 `start-task.sh` 建临时 worktree，按验收命令跑一遍（允许预期失败），确认路径/工具/端口；
+   跑完删除。
+7. **入口提示复审**：目标、验收、只读授权、允许改动、停点五件事齐全；不写卡外要求。
+8. **发卡后文档变化**：必须同步/重建 worktree 或发「卡差量」，不能只口头通知。执行者开工后先跑
+   `git -C <wt> diff --quiet main -- docs/tasks/m1.md docs/tasks/README.md PLAN.md`；非 0 就停，
+   要卡差量，不按旧卡实现。
+
+## 10. 当前卡组
 
 | 文件 | 里程碑 | 状态 |
 |---|---|---|
