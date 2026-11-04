@@ -1,0 +1,112 @@
+[
+  {
+    "fixture": "t14-bypass-cn-t1",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t14-bypass-cn-t2",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t14-bypass-cn-t3",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t14-gfw-t1",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t14-global-t1",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t14-no-v6-filter",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t14-single-trust",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t822-direct-dns-default",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t919-bypass-modes",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t919-disabled-modes",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t919-gfw-gfw",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t919-global-gfw",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t922-explicit-tcp",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t922-mixed",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t922-single-udp",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t923-wan-114",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t923-wan-fallback",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t923-wan-t3",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t940-degraded-bypass_cn",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t940-degraded-gfw",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t940-degraded-global",
+    "ok": true,
+    "stderr": ""
+  },
+  {
+    "fixture": "t940-degraded-global-bypass",
+    "ok": true,
+    "stderr": ""
+  }
+]

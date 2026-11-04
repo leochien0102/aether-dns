@@ -1,0 +1,48 @@
+case                       parse qname   qtype    rcode  an    ns    ar    re-encode
+query-A                    ok    www.example.com. A        NoError 0     0     0     identical
+query-AAAA                 ok    www.example.com. AAAA     NoError 0     0     0     identical
+query-HTTPS-65             ok    www.example.com. HTTPS    NoError 0     0     0     identical
+query-EDNS                 ok    www.example.com. A        NoError 0     0     1     identical
+query-mixedcase            ok    WwW.ExAmPlE.CoM. A        NoError 0     0     0     identical
+query-2questions           ok    a.example.com. A        NoError 0     0     0     diff (50 vs 39 bytes)
+    wire: 1239010000020000000000000161076578616d706c6503636f6d000001000101
+    re  : 1239010000020000000000000161076578616d706c6503636f6d000001000101
+query-trailing-garbage     ok    www.example.com. A        NoError 0     0     0     diff (37 vs 33 bytes)
+    wire: 123a0100000100000000000003777777076578616d706c6503636f6d00000100
+    re  : 123a0100000100000000000003777777076578616d706c6503636f6d00000100
+query-11-bytes             FAIL  error: unexpected end of input reached
+query-missing-question     FAIL  error: unexpected end of input reached
+query-label-64             FAIL  error: unrecognized label code: 1000000
+resp-A+OPT                 ok    www.example.com. A        NoError 1     0     1     diff (75 vs 60 bytes)
+    wire: 22348080000100010000000103777777076578616d706c6503636f6d00000100
+    re  : 22348080000100010000000103777777076578616d706c6503636f6d00000100
+resp-A                     ok    www.example.com. A        NoError 1     0     0     diff (64 vs 49 bytes)
+    wire: 22358080000100010000000003777777076578616d706c6503636f6d00000100
+    re  : 22358080000100010000000003777777076578616d706c6503636f6d00000100
+resp-cname+A               ok    www.example.com. A        NoError 2     0     0     diff (109 vs 79 bytes)
+    wire: 22368080000100020000000003777777076578616d706c6503636f6d00000100
+    re  : 22368080000100020000000003777777076578616d706c6503636f6d00000100
+resp-nxdomain+SOA          ok    nope.example.com. A        NXDomain 0     1     1     diff (128 vs 95 bytes)
+    wire: 223780830001000000010001046e6f7065076578616d706c6503636f6d000001
+    re  : 223780830001000000010001046e6f7065076578616d706c6503636f6d000001
+resp-nodata+SOA            ok    nodata.example.com. A        NoError 0     1     0     diff (119 vs 86 bytes)
+    wire: 223880800001000000010000066e6f64617461076578616d706c6503636f6d00
+    re  : 223880800001000000010000066e6f64617461076578616d706c6503636f6d00
+resp-TC                    ok    www.example.com. A        NoError 0     0     0     identical
+resp-unknown-rr-65280      ok    www.example.com. A        NoError 1     0     0     diff (65 vs 50 bytes)
+    wire: 223a8080000100010000000003777777076578616d706c6503636f6d00000100
+    re  : 223a8080000100010000000003777777076578616d706c6503636f6d00000100
+resp-HTTPS-65              ok    www.example.com. HTTPS    NoError 1     0     0     diff (63 vs 48 bytes)
+    wire: 223b8080000100010000000003777777076578616d706c6503636f6d00004100
+    re  : 223b8080000100010000000003777777076578616d706c6503636f6d00004100
+resp-compressed-name       ok    www.example.com. A        NoError 1     0     0     identical
+resp-OPT-extrcode          ok    www.example.com. A        NoError 1     0     1     diff (75 vs 60 bytes)
+    wire: 223d8080000100010000000103777777076578616d706c6503636f6d00000100
+    re  : 223d8080000100010000000103777777076578616d706c6503636f6d00000100
+
+parsed 17, failed 3; re-encode identical 7, different 10
+unknown RRs seen 1, preserved on re-encode 1
+wire scanner: 20 ok, 0 bad
+compressed-qname: rejected (label points to data not prior to idx: 12 ptr: 12)
+compression-loop: rejected (overlapping labels name 30 other 33)
+plain-query: ok

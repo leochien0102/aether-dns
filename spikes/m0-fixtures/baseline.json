@@ -1,0 +1,1683 @@
+{
+  "scenarios": [
+    {
+      "fixture": "t14-gfw-t1",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "gfw",
+          "qname": "q1.gfw.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.gfw.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.11",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "42428180000100010000000002713103676677076578616d706c650000010001c00c000100010000001e00040a00000b",
+          "upstream_hits": [
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.gfw.example.",
+              "qtype": 1,
+              "raw_hex": "01000100000100000000000002713103676677076578616d706c650000010001"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.gfw.example.",
+              "qtype": 1,
+              "raw_hex": "01000100000100000000000002713103676677076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [
+              "10.0.0.11"
+            ],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "chn-unlisted",
+          "qname": "q1.chn.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.chn.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "4242818000010001000000000271310363686e076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.chn.example.",
+              "qtype": 1,
+              "raw_hex": "0200010000010000000000000271310363686e076578616d706c650000010001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.chn.example.",
+              "qtype": 1,
+              "raw_hex": "0200010000010000000000000271310363686e076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "other",
+          "qname": "q1.other.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.other.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "030001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "030001000001000000000000027131056f74686572076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "gfw-aaaa",
+          "qname": "q2.gfw.example",
+          "qtype": 28,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q2.gfw.example.",
+            "qtype": 28,
+            "ancount": 0,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": []
+          },
+          "reply_hex": "42428180000100000000000002713203676677076578616d706c6500001c0001",
+          "upstream_hits": [],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "gfw-https",
+          "qname": "q3.gfw.example",
+          "qtype": 65,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q3.gfw.example.",
+            "qtype": 65,
+            "ancount": 0,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": []
+          },
+          "reply_hex": "42428180000100000000000002713303676677076578616d706c650000410001",
+          "upstream_hits": [],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "gfw-edns",
+          "qname": "q4.gfw.example",
+          "qtype": 1,
+          "edns": true,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q4.gfw.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.11",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "42428180000100010000000002713403676677076578616d706c650000010001c00c000100010000001e00040a00000b",
+          "upstream_hits": [
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q4.gfw.example.",
+              "qtype": 1,
+              "raw_hex": "04000100000100000000000102713403676677076578616d706c65000001000100002904d0000000000000"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q4.gfw.example.",
+              "qtype": 1,
+              "raw_hex": "04000100000100000000000102713403676677076578616d706c65000001000100002904d0000000000000"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [
+              "10.0.0.11"
+            ],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "fixture": "t14-bypass-cn-t1",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "gfw",
+          "qname": "q1.gfw.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.gfw.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.11",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "42428180000100010000000002713103676677076578616d706c650000010001c00c000100010000001e00040a00000b",
+          "upstream_hits": [
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.gfw.example.",
+              "qtype": 1,
+              "raw_hex": "01000100000100000000000002713103676677076578616d706c650000010001"
+            },
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.gfw.example.",
+              "qtype": 1,
+              "raw_hex": "01000100000100000000000002713103676677076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "chn",
+          "qname": "q1.chn.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.chn.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "4242818000010001000000000271310363686e076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.chn.example.",
+              "qtype": 1,
+              "raw_hex": "0200010000010000000000000271310363686e076578616d706c650000010001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.chn.example.",
+              "qtype": 1,
+              "raw_hex": "0200010000010000000000000271310363686e076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "group-proxy",
+          "qname": "q1.proxy.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.proxy.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.11",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "4242818000010001000000000271310570726f7879076578616d706c650000010001c00c000100010000001e00040a00000b",
+          "upstream_hits": [
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.proxy.example.",
+              "qtype": 1,
+              "raw_hex": "0300010000010000000000000271310570726f7879076578616d706c650000010001"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.proxy.example.",
+              "qtype": 1,
+              "raw_hex": "0300010000010000000000000271310570726f7879076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [
+              "10.0.0.11"
+            ],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "group-direct",
+          "qname": "q1.direct.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.direct.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "42428180000100010000000002713106646972656374076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.direct.example.",
+              "qtype": 1,
+              "raw_hex": "04000100000100000000000002713106646972656374076578616d706c650000010001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.direct.example.",
+              "qtype": 1,
+              "raw_hex": "04000100000100000000000002713106646972656374076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": [
+              "10.0.0.1"
+            ]
+          }
+        },
+        {
+          "label": "group-boot",
+          "qname": "q1.boot.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.boot.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "42428180000100010000000002713104626f6f74076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.boot.example.",
+              "qtype": 1,
+              "raw_hex": "05000100000100000000000002713104626f6f74076578616d706c650000010001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.boot.example.",
+              "qtype": 1,
+              "raw_hex": "05000100000100000000000002713104626f6f74076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "none-china",
+          "qname": "q1.none-china.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.none-china.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "4242818000010001000000000271310a6e6f6e652d6368696e61076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.none-china.example.",
+              "qtype": 1,
+              "raw_hex": "0600010000010000000000000271310a6e6f6e652d6368696e61076578616d706c650000010001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.none-china.example.",
+              "qtype": 1,
+              "raw_hex": "0600010000010000000000000271310a6e6f6e652d6368696e61076578616d706c650000010001"
+            },
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.none-china.example.",
+              "qtype": 1,
+              "raw_hex": "0600010000010000000000000271310a6e6f6e652d6368696e61076578616d706c650000010001"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.none-china.example.",
+              "qtype": 1,
+              "raw_hex": "0600010000010000000000000271310a6e6f6e652d6368696e61076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "none-noncn",
+          "qname": "q1.none-noncn.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.none-noncn.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.11",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "4242818000010001000000000271310a6e6f6e652d6e6f6e636e076578616d706c650000010001c00c000100010000001e00040a00000b",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.none-noncn.example.",
+              "qtype": 1,
+              "raw_hex": "0700010000010000000000000271310a6e6f6e652d6e6f6e636e076578616d706c650000010001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.none-noncn.example.",
+              "qtype": 1,
+              "raw_hex": "0700010000010000000000000271310a6e6f6e652d6e6f6e636e076578616d706c650000010001"
+            },
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.none-noncn.example.",
+              "qtype": 1,
+              "raw_hex": "0700010000010000000000000271310a6e6f6e652d6e6f6e636e076578616d706c650000010001"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.none-noncn.example.",
+              "qtype": 1,
+              "raw_hex": "0700010000010000000000000271310a6e6f6e652d6e6f6e636e076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "aaaa",
+          "qname": "q2.none-china.example",
+          "qtype": 28,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q2.none-china.example.",
+            "qtype": 28,
+            "ancount": 0,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": []
+          },
+          "reply_hex": "4242818000010000000000000271320a6e6f6e652d6368696e61076578616d706c6500001c0001",
+          "upstream_hits": [],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "https",
+          "qname": "q3.none-china.example",
+          "qtype": 65,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q3.none-china.example.",
+            "qtype": 65,
+            "ancount": 0,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": []
+          },
+          "reply_hex": "4242818000010000000000000271330a6e6f6e652d6368696e61076578616d706c650000410001",
+          "upstream_hits": [],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "fixture": "t14-global-t1",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "apple",
+          "qname": "q1.apple.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.apple.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000027131056170706c65076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.apple.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056170706c65076578616d706c650000010001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.apple.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056170706c65076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "other",
+          "qname": "q1.other.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.other.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.11",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a00000b",
+          "upstream_hits": [
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "020001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "020001000001000000000000027131056f74686572076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "gfw-aaaa",
+          "qname": "q2.other.example",
+          "qtype": 28,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q2.other.example.",
+            "qtype": 28,
+            "ancount": 0,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": []
+          },
+          "reply_hex": "424281800001000000000000027132056f74686572076578616d706c6500001c0001",
+          "upstream_hits": [],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "fixture": "t922-mixed",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "mixed",
+          "qname": "q1.other.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.other.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 3,
+              "addr": "114.114.114.114",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "fixture": "t922-explicit-tcp",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "tcp-mixed",
+          "qname": "q1.other.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.other.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 3,
+              "addr": "114.114.114.114",
+              "proto": "tcp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "tcp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "fixture": "t923-wan-t3",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "t3",
+          "qname": "q1.other.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.other.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.4",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a000004",
+          "upstream_hits": [
+            {
+              "endpoint": 4,
+              "addr": "202.96.128.86",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 5,
+              "addr": "202.96.134.133",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 3,
+              "addr": "114.114.114.114",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 4,
+              "addr": "202.96.128.86",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 5,
+              "addr": "202.96.134.133",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 3,
+              "addr": "114.114.114.114",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "fixture": "t14-no-v6-filter",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "aaaa",
+          "qname": "q1.none-china.example",
+          "qtype": 28,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.none-china.example.",
+            "qtype": 28,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 28,
+                "ttl": 30,
+                "value": "2001:db8::11",
+                "rdlen": 16
+              }
+            ]
+          },
+          "reply_hex": "4242818000010001000000000271310a6e6f6e652d6368696e61076578616d706c6500001c0001c00c001c00010000001e001020010db8000000000000000000000011",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.none-china.example.",
+              "qtype": 28,
+              "raw_hex": "0100010000010000000000000271310a6e6f6e652d6368696e61076578616d706c6500001c0001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q1.none-china.example.",
+              "qtype": 28,
+              "raw_hex": "0100010000010000000000000271310a6e6f6e652d6368696e61076578616d706c6500001c0001"
+            },
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.none-china.example.",
+              "qtype": 28,
+              "raw_hex": "0100010000010000000000000271310a6e6f6e652d6368696e61076578616d706c6500001c0001"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q1.none-china.example.",
+              "qtype": 28,
+              "raw_hex": "0100010000010000000000000271310a6e6f6e652d6368696e61076578616d706c6500001c0001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "https",
+          "qname": "q2.none-china.example",
+          "qtype": 65,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q2.none-china.example.",
+            "qtype": 65,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 65,
+                "ttl": 30,
+                "value": null,
+                "rdlen": 3
+              }
+            ]
+          },
+          "reply_hex": "4242818000010001000000000271320a6e6f6e652d6368696e61076578616d706c650000410001c00c004100010000001e0003000100",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q2.none-china.example.",
+              "qtype": 65,
+              "raw_hex": "0200010000010000000000000271320a6e6f6e652d6368696e61076578616d706c650000410001"
+            },
+            {
+              "endpoint": 2,
+              "addr": "119.29.29.29",
+              "proto": "udp",
+              "qname": "q2.none-china.example.",
+              "qtype": 65,
+              "raw_hex": "0200010000010000000000000271320a6e6f6e652d6368696e61076578616d706c650000410001"
+            },
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q2.none-china.example.",
+              "qtype": 65,
+              "raw_hex": "0200010000010000000000000271320a6e6f6e652d6368696e61076578616d706c650000410001"
+            },
+            {
+              "endpoint": 12,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "q2.none-china.example.",
+              "qtype": 65,
+              "raw_hex": "0200010000010000000000000271320a6e6f6e652d6368696e61076578616d706c650000410001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "fixture": "t940-degraded-global",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "gfw",
+          "qname": "q1.gfw.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.gfw.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "42428180000100010000000002713103676677076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.gfw.example.",
+              "qtype": 1,
+              "raw_hex": "01000100000100000000000002713103676677076578616d706c650000010001"
+            },
+            {
+              "endpoint": 3,
+              "addr": "114.114.114.114",
+              "proto": "udp",
+              "qname": "q1.gfw.example.",
+              "qtype": 1,
+              "raw_hex": "01000100000100000000000002713103676677076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [
+              "10.0.0.1"
+            ],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "other",
+          "qname": "q1.other.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q1.other.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "020001000001000000000000027131056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 3,
+              "addr": "114.114.114.114",
+              "proto": "udp",
+              "qname": "q1.other.example.",
+              "qtype": 1,
+              "raw_hex": "020001000001000000000000027131056f74686572076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [
+              "10.0.0.1"
+            ],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "aaa",
+          "qname": "q2.other.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "q2.other.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000027132056f74686572076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "q2.other.example.",
+              "qtype": 1,
+              "raw_hex": "030001000001000000000000027132056f74686572076578616d706c650000010001"
+            },
+            {
+              "endpoint": 3,
+              "addr": "114.114.114.114",
+              "proto": "udp",
+              "qname": "q2.other.example.",
+              "qtype": 1,
+              "raw_hex": "030001000001000000000000027132056f74686572076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [
+              "10.0.0.1"
+            ],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "fixture": "t14-single-trust",
+      "start_error": null,
+      "queries": [
+        {
+          "label": "cache-1",
+          "qname": "cache.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "cache.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000056361636865076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [
+            {
+              "endpoint": 1,
+              "addr": "223.5.5.5",
+              "proto": "udp",
+              "qname": "cache.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000056361636865076578616d706c650000010001"
+            },
+            {
+              "endpoint": 3,
+              "addr": "114.114.114.114",
+              "proto": "udp",
+              "qname": "cache.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000056361636865076578616d706c650000010001"
+            },
+            {
+              "endpoint": 11,
+              "addr": "127.0.0.1",
+              "proto": "tcp",
+              "qname": "cache.example.",
+              "qtype": 1,
+              "raw_hex": "010001000001000000000000056361636865076578616d706c650000010001"
+            }
+          ],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "cache-2",
+          "qname": "cache.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "cache.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000056361636865076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        },
+        {
+          "label": "cache-3",
+          "qname": "cache.example",
+          "qtype": 1,
+          "edns": false,
+          "error": null,
+          "reply": {
+            "id": 16962,
+            "flags": 33152,
+            "rcode": 0,
+            "tc": false,
+            "ra": true,
+            "qname": "cache.example.",
+            "qtype": 1,
+            "ancount": 1,
+            "nscount": 0,
+            "arcount": 0,
+            "answers": [
+              {
+                "type": 1,
+                "ttl": 30,
+                "value": "10.0.0.1",
+                "rdlen": 4
+              }
+            ]
+          },
+          "reply_hex": "424281800001000100000000056361636865076578616d706c650000010001c00c000100010000001e00040a000001",
+          "upstream_hits": [],
+          "sets": {
+            "chnroute4": [
+              "10.0.0.0/8"
+            ],
+            "gfw4": [],
+            "uproxy4": [],
+            "udirect4": []
+          }
+        }
+      ],
+      "stderr": ""
+    }
+  ],
+  "sanity": [
+    {
+      "check": "gfw-mode: gfw.example only hits trust",
+      "ok": true
+    },
+    {
+      "check": "gfw-mode: gfw4 got the answer",
+      "ok": true
+    },
+    {
+      "check": "gfw-mode: unlisted only hits china",
+      "ok": true
+    },
+    {
+      "check": "no-ipv6: AAAA filtered (no upstream hit, NODATA)",
+      "ok": true
+    },
+    {
+      "check": "filter-qtype 65: HTTPS filtered (no upstream hit, NODATA)",
+      "ok": true
+    },
+    {
+      "check": "reply strips EDNS OPT (arcount=0)",
+      "ok": true
+    },
+    {
+      "check": "group uproxy uses trust upstream",
+      "ok": true
+    },
+    {
+      "check": "group udirect uses china upstream",
+      "ok": true
+    },
+    {
+      "check": "tag:none non-China answer falls through to trust",
+      "ok": true
+    },
+    {
+      "check": "tag:none China answer accepted from china",
+      "ok": true
+    },
+    {
+      "check": "no no-ipv6: AAAA forwarded",
+      "ok": true
+    },
+    {
+      "check": "no filter-qtype: HTTPS forwarded",
+      "ok": true
+    },
+    {
+      "check": "cache: third identical query does not hit upstream",
+      "ok": true
+    }
+  ]
+}

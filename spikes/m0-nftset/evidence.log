@@ -1,0 +1,116 @@
+== create aetherproxy table (same shapes as aether-proxy's nft.uc)
+
+== 1. query members of chnroute4 over netlink (no nft CLI)
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset dump inet@aetherproxy@chnroute4
+set inet@aetherproxy@chnroute4: 3 messages, 5 elements, errors=[]
+  1.0.1.0 - 1.0.3.255
+  223.255.252.0 - 223.255.253.255
+(2 members, sentinel=true)
+
+== 2. per-IP membership test (what tag:none needs)
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset test inet@aetherproxy@chnroute4 1.0.1.5
+test 1.0.1.5: FOUND (43.791µs)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset test inet@aetherproxy@chnroute4 1.0.4.1
+test 1.0.4.1: NOT_FOUND errno=-2 (No such file or directory) (42.251µs)
+
+== 3. add a batch to gfw4 (interval begin+end, batch begin/end, one ACK)
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@aetherproxy@gfw4 10.2.0.1 10.2.0.2 10.2.0.3
+add 3 ip(s): ACK_OK (88.753µs)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset dump inet@aetherproxy@gfw4
+set inet@aetherproxy@gfw4: 3 messages, 6 elements, errors=[]
+  10.2.0.1 - 10.2.0.1
+  10.2.0.2 - 10.2.0.2
+  10.2.0.3 - 10.2.0.3
+(3 members, sentinel=false)
+
+== 3b. nft CLI after chinadns-ng-style consecutive raw adds (known upstream interaction)
+-- nft list still works:
+table inet aetherproxy {
+	set gfw4 {
+		type ipv4_addr
+		flags interval
+		auto-merge
+		elements = { 10.2.0.1, 10.2.0.2,
+			     10.2.0.3 }
+	}
+}
+-- nft add element fails (same with the real chinadns-ng binary):
+netlink: Error: Could not process rule: No such file or directory
+nft add rc=1
+-- direct netlink add still works:
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@aetherproxy@gfw4 10.2.0.4
+add 1 ip(s): ACK_OK (53.292µs)
+
+== 4. exact duplicate add is idempotent (no NLM_F_EXCL)
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@aetherproxy@gfw4 10.2.0.1
+add 1 ip(s): ACK_OK (48.471µs)
+
+== 5. adding an IP inside an existing range fails EEXIST (whole batch aborts)
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@aetherproxy@eexist4 1.2.3.88 10.8.8.8
+add 2 ip(s): ERROR errno=-17 (File exists) (38.684428ms)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset dump inet@aetherproxy@eexist4
+set inet@aetherproxy@eexist4: 3 messages, 3 elements, errors=[]
+  1.2.3.0 - 1.2.3.255
+(1 members, sentinel=true)
+
+== 6. chinadns-ng-style test-then-add avoids EEXIST
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add-safe inet@aetherproxy@eexist4 1.2.3.99 10.9.9.9
+add-safe 2 ip(s): added 1 missing (1 round(s)) (120.224µs)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset dump inet@aetherproxy@eexist4
+set inet@aetherproxy@eexist4: 3 messages, 5 elements, errors=[]
+  1.2.3.0 - 1.2.3.255
+  10.9.9.9 - 10.9.9.9
+(2 members, sentinel=true)
+
+== 7. benchmark (one process, one socket, no shell-outs)
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset bench-test inet@aetherproxy@chnroute4 1.0.1.5 1000
+bench-test n=1000 hits=1000 total=5.166943ms per_op=5.166µs
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset bench-add inet@aetherproxy@uproxy4 500
+bench-add n=500 total=2.078468ms per_ip=4.156µs
+
+== 8. failure modes
+-- missing set
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@aetherproxy@nope 10.1.1.1
+add 1 ip(s): ERROR errno=-2 (No such file or directory) (16.678559ms)
+
+-- no CAP_NET_ADMIN
++ sudo ip netns exec m0-nftset capsh --drop=cap_net_admin -- -c /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset test inet@aetherproxy@chnroute4 1.0.1.5
+test 1.0.1.5: NOT_FOUND errno=-1 (Operation not permitted) (46.121µs)
+
+-- table deleted under us, then recreated (aether-proxy reload)
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@reloadtest@s4 192.0.2.10
+add 1 ip(s): ACK_OK (49.511µs)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@reloadtest@s4 192.0.2.10
+add 1 ip(s): ERROR errno=-2 (No such file or directory) (13.273644ms)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@reloadtest@s4 192.0.2.10
+add 1 ip(s): ACK_OK (54.471µs)
+
+== 9. IPv6 set path (P1, same code)
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset add inet@aether6@v6 2001:db8::1 2001:db8::2
+add 2 ip(s): ACK_OK (56.572µs)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset test inet@aether6@v6 2001:db8::1
+test 2001:db8::1: FOUND (45.632µs)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset test inet@aether6@v6 2001:db8::3
+test 2001:db8::3: NOT_FOUND errno=-2 (No such file or directory) (63.872µs)
+
++ sudo ip netns exec m0-nftset /workspace/openwrt/aether-dns/spikes/m0-nftset/target/release/m0-nftset dump inet@aether6@v6
+set inet@aether6@v6: 3 messages, 4 elements, errors=[]
+  2001:db8::1 - 2001:db8::1
+  2001:db8::2 - 2001:db8::2
+(2 members, sentinel=false)
+
+== 10. no libnftnl dependency
+	linux-vdso.so.1 (0x0000741b2d9fc000)
+	libgcc_s.so.1 => /usr/lib/x86_64-linux-gnu/libgcc_s.so.1 (0x0000741b2d94e000)
+	libc.so.6 => /usr/lib/x86_64-linux-gnu/libc.so.6 (0x0000741b2d600000)
+	/lib64/ld-linux-x86-64.so.2 (0x0000741b2d9fe000)
+DONE

@@ -1,0 +1,192 @@
+[
+  {
+    "label": "t14-gfw-t1/gfw/upstream-11-tcp",
+    "direction": "upstream-query",
+    "hex": "01000100000100000000000002713103676677076578616d706c650000010001"
+  },
+  {
+    "label": "t14-gfw-t1/gfw/client-reply",
+    "direction": "client-reply",
+    "hex": "42428180000100010000000002713103676677076578616d706c650000010001c00c000100010000001e00040a00000b"
+  },
+  {
+    "label": "t14-gfw-t1/chn-unlisted/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "0200010000010000000000000271310363686e076578616d706c650000010001"
+  },
+  {
+    "label": "t14-gfw-t1/chn-unlisted/client-reply",
+    "direction": "client-reply",
+    "hex": "4242818000010001000000000271310363686e076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "t14-gfw-t1/other/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "030001000001000000000000027131056f74686572076578616d706c650000010001"
+  },
+  {
+    "label": "t14-gfw-t1/other/client-reply",
+    "direction": "client-reply",
+    "hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "t14-gfw-t1/gfw-aaaa/client-reply",
+    "direction": "client-reply",
+    "hex": "42428180000100000000000002713203676677076578616d706c6500001c0001"
+  },
+  {
+    "label": "t14-gfw-t1/gfw-https/client-reply",
+    "direction": "client-reply",
+    "hex": "42428180000100000000000002713303676677076578616d706c650000410001"
+  },
+  {
+    "label": "t14-gfw-t1/gfw-edns/upstream-11-tcp",
+    "direction": "upstream-query",
+    "hex": "04000100000100000000000102713403676677076578616d706c65000001000100002904d0000000000000"
+  },
+  {
+    "label": "t14-gfw-t1/gfw-edns/client-reply",
+    "direction": "client-reply",
+    "hex": "42428180000100010000000002713403676677076578616d706c650000010001c00c000100010000001e00040a00000b"
+  },
+  {
+    "label": "t14-bypass-cn-t1/group-proxy/upstream-11-tcp",
+    "direction": "upstream-query",
+    "hex": "0300010000010000000000000271310570726f7879076578616d706c650000010001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/group-proxy/client-reply",
+    "direction": "client-reply",
+    "hex": "4242818000010001000000000271310570726f7879076578616d706c650000010001c00c000100010000001e00040a00000b"
+  },
+  {
+    "label": "t14-bypass-cn-t1/group-direct/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "04000100000100000000000002713106646972656374076578616d706c650000010001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/group-direct/client-reply",
+    "direction": "client-reply",
+    "hex": "42428180000100010000000002713106646972656374076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/group-boot/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "05000100000100000000000002713104626f6f74076578616d706c650000010001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/group-boot/client-reply",
+    "direction": "client-reply",
+    "hex": "42428180000100010000000002713104626f6f74076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/none-china/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "0600010000010000000000000271310a6e6f6e652d6368696e61076578616d706c650000010001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/none-china/client-reply",
+    "direction": "client-reply",
+    "hex": "4242818000010001000000000271310a6e6f6e652d6368696e61076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/none-noncn/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "0700010000010000000000000271310a6e6f6e652d6e6f6e636e076578616d706c650000010001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/none-noncn/client-reply",
+    "direction": "client-reply",
+    "hex": "4242818000010001000000000271310a6e6f6e652d6e6f6e636e076578616d706c650000010001c00c000100010000001e00040a00000b"
+  },
+  {
+    "label": "t14-bypass-cn-t1/aaaa/client-reply",
+    "direction": "client-reply",
+    "hex": "4242818000010000000000000271320a6e6f6e652d6368696e61076578616d706c6500001c0001"
+  },
+  {
+    "label": "t14-bypass-cn-t1/https/client-reply",
+    "direction": "client-reply",
+    "hex": "4242818000010000000000000271330a6e6f6e652d6368696e61076578616d706c650000410001"
+  },
+  {
+    "label": "t14-global-t1/apple/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "010001000001000000000000027131056170706c65076578616d706c650000010001"
+  },
+  {
+    "label": "t14-global-t1/apple/client-reply",
+    "direction": "client-reply",
+    "hex": "424281800001000100000000027131056170706c65076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "t14-global-t1/other/upstream-11-tcp",
+    "direction": "upstream-query",
+    "hex": "020001000001000000000000027131056f74686572076578616d706c650000010001"
+  },
+  {
+    "label": "t14-global-t1/other/client-reply",
+    "direction": "client-reply",
+    "hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a00000b"
+  },
+  {
+    "label": "t14-global-t1/gfw-aaaa/client-reply",
+    "direction": "client-reply",
+    "hex": "424281800001000000000000027132056f74686572076578616d706c6500001c0001"
+  },
+  {
+    "label": "t922-mixed/mixed/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "010001000001000000000000027131056f74686572076578616d706c650000010001"
+  },
+  {
+    "label": "t923-wan-t3/t3/client-reply",
+    "direction": "client-reply",
+    "hex": "424281800001000100000000027131056f74686572076578616d706c650000010001c00c000100010000001e00040a000004"
+  },
+  {
+    "label": "t14-no-v6-filter/aaaa/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "0100010000010000000000000271310a6e6f6e652d6368696e61076578616d706c6500001c0001"
+  },
+  {
+    "label": "t14-no-v6-filter/aaaa/client-reply",
+    "direction": "client-reply",
+    "hex": "4242818000010001000000000271310a6e6f6e652d6368696e61076578616d706c6500001c0001c00c001c00010000001e001020010db8000000000000000000000011"
+  },
+  {
+    "label": "t14-no-v6-filter/https/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "0200010000010000000000000271320a6e6f6e652d6368696e61076578616d706c650000410001"
+  },
+  {
+    "label": "t14-no-v6-filter/https/client-reply",
+    "direction": "client-reply",
+    "hex": "4242818000010001000000000271320a6e6f6e652d6368696e61076578616d706c650000410001c00c004100010000001e0003000100"
+  },
+  {
+    "label": "t940-degraded-global/gfw/client-reply",
+    "direction": "client-reply",
+    "hex": "42428180000100010000000002713103676677076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "t940-degraded-global/aaa/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "030001000001000000000000027132056f74686572076578616d706c650000010001"
+  },
+  {
+    "label": "t940-degraded-global/aaa/client-reply",
+    "direction": "client-reply",
+    "hex": "424281800001000100000000027132056f74686572076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "t14-single-trust/cache-1/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "010001000001000000000000056361636865076578616d706c650000010001"
+  },
+  {
+    "label": "t14-single-trust/cache-1/client-reply",
+    "direction": "client-reply",
+    "hex": "424281800001000100000000056361636865076578616d706c650000010001c00c000100010000001e00040a000001"
+  }
+]

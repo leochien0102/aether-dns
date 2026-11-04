@@ -1,0 +1,551 @@
+{
+  "directive_counts": {
+    "add-taggfw-ip": 10,
+    "bind-addr": 22,
+    "bind-port": 22,
+    "cache": 22,
+    "cache-stale": 22,
+    "china-dns": 22,
+    "chnlist-file": 16,
+    "default-tag": 22,
+    "filter-qtype": 21,
+    "gfwlist-file": 21,
+    "group": 66,
+    "group-dnl": 66,
+    "group-ipset": 44,
+    "group-upstream": 66,
+    "ipset-name4": 22,
+    "ipset-name6": 22,
+    "no-ipv6": 21,
+    "trust-dns": 22,
+    "verdict-cache": 22
+  },
+  "fixture_count": 22,
+  "fixtures": {
+    "t14-bypass-cn-t1": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t14-bypass-cn-t2": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t14-bypass-cn-t3": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t14-gfw-t1": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t14-global-t1": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t14-no-v6-filter": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t14-single-trust": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t822-direct-dns-default": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t919-bypass-modes": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t919-disabled-modes": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t919-gfw-gfw": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t919-global-gfw": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t922-explicit-tcp": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t922-mixed": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t922-single-udp": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t923-wan-114": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t923-wan-fallback": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t923-wan-t3": {
+      "directives": {
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t940-degraded-bypass_cn": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t940-degraded-gfw": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t940-degraded-global": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    },
+    "t940-degraded-global-bypass": {
+      "directives": {
+        "add-taggfw-ip": 1,
+        "bind-addr": 1,
+        "bind-port": 1,
+        "cache": 1,
+        "cache-stale": 1,
+        "china-dns": 1,
+        "chnlist-file": 1,
+        "default-tag": 1,
+        "filter-qtype": 1,
+        "gfwlist-file": 1,
+        "group": 3,
+        "group-dnl": 3,
+        "group-ipset": 2,
+        "group-upstream": 3,
+        "ipset-name4": 1,
+        "ipset-name6": 1,
+        "no-ipv6": 1,
+        "trust-dns": 1,
+        "verdict-cache": 1
+      }
+    }
+  },
+  "missing_directives": [],
+  "value_variants": {
+    "add-taggfw-ip": [
+      "inet@aetherproxy@gfw4,null"
+    ],
+    "china-dns": [
+      "202.96.128.86,114.114.114.114",
+      "202.96.128.86,202.96.134.133,114.114.114.114",
+      "223.5.5.5,114.114.114.114",
+      "223.5.5.5,119.29.29.29"
+    ],
+    "default-tag": [
+      "chn",
+      "gfw",
+      "none"
+    ],
+    "filter-qtype": [
+      "65"
+    ],
+    "group-upstream": [
+      "202.96.128.86,114.114.114.114",
+      "202.96.128.86,202.96.134.133,114.114.114.114",
+      "223.5.5.5,114.114.114.114",
+      "223.5.5.5,119.29.29.29",
+      "tcp://127.0.0.1#31082",
+      "tcp://127.0.0.1#31082,tcp://127.0.0.1#31083",
+      "udp://127.0.0.1#31082",
+      "udp://127.0.0.1#31082,tcp://127.0.0.1#31083"
+    ],
+    "trust-dns": [
+      "202.96.128.86,114.114.114.114",
+      "202.96.128.86,202.96.134.133,114.114.114.114",
+      "223.5.5.5,114.114.114.114",
+      "223.5.5.5,119.29.29.29",
+      "tcp://127.0.0.1#31082",
+      "tcp://127.0.0.1#31082,tcp://127.0.0.1#31083",
+      "udp://127.0.0.1#31082",
+      "udp://127.0.0.1#31082,tcp://127.0.0.1#31083"
+    ]
+  }
+}

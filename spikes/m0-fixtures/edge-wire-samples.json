@@ -1,0 +1,162 @@
+[
+  {
+    "label": "edge/normal/client-query",
+    "direction": "client-query",
+    "hex": "5001010000010000000000000465646765076578616d706c650000010001"
+  },
+  {
+    "label": "edge/normal/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "0100010000010000000000000465646765076578616d706c650000010001"
+  },
+  {
+    "label": "edge/normal/upstream-2-udp",
+    "direction": "upstream-query",
+    "hex": "0100010000010000000000000465646765076578616d706c650000010001"
+  },
+  {
+    "label": "edge/normal/upstream-11-tcp",
+    "direction": "upstream-query",
+    "hex": "0100010000010000000000000465646765076578616d706c650000010001"
+  },
+  {
+    "label": "edge/normal/upstream-12-tcp",
+    "direction": "upstream-query",
+    "hex": "0100010000010000000000000465646765076578616d706c650000010001"
+  },
+  {
+    "label": "edge/normal/client-reply",
+    "direction": "client-reply",
+    "hex": "5001818000010001000000000465646765076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "edge/two-questions/client-query",
+    "direction": "client-query",
+    "hex": "5002010000020000000000000161076578616d706c6500000100010162076578616d706c650000010001"
+  },
+  {
+    "label": "edge/two-questions/client-reply",
+    "direction": "client-reply",
+    "hex": "5002818000020000000000000161076578616d706c6500000100010162076578616d706c650000010001"
+  },
+  {
+    "label": "edge/zero-questions/client-query",
+    "direction": "client-query",
+    "hex": "500301000000000000000000"
+  },
+  {
+    "label": "edge/zero-questions/client-reply",
+    "direction": "client-reply",
+    "hex": "500381800000000000000000"
+  },
+  {
+    "label": "edge/trailing-garbage/client-query",
+    "direction": "client-query",
+    "hex": "5004010000010000000000000767617262616765076578616d706c650000010001deadbeef"
+  },
+  {
+    "label": "edge/trailing-garbage/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "0200010000010000000000000767617262616765076578616d706c650000010001deadbeef"
+  },
+  {
+    "label": "edge/trailing-garbage/upstream-2-udp",
+    "direction": "upstream-query",
+    "hex": "0200010000010000000000000767617262616765076578616d706c650000010001deadbeef"
+  },
+  {
+    "label": "edge/trailing-garbage/upstream-11-tcp",
+    "direction": "upstream-query",
+    "hex": "0200010000010000000000000767617262616765076578616d706c650000010001deadbeef"
+  },
+  {
+    "label": "edge/trailing-garbage/upstream-12-tcp",
+    "direction": "upstream-query",
+    "hex": "0200010000010000000000000767617262616765076578616d706c650000010001deadbeef"
+  },
+  {
+    "label": "edge/trailing-garbage/client-reply",
+    "direction": "client-reply",
+    "hex": "5004818000010001000000000767617262616765076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "edge/label-64/client-query",
+    "direction": "client-query",
+    "hex": "50050100000100000000000040787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878780000010001"
+  },
+  {
+    "label": "edge/label-64/client-reply",
+    "direction": "client-reply",
+    "hex": "50058180000100000000000040787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878780000010001"
+  },
+  {
+    "label": "edge/short-11/client-query",
+    "direction": "client-query",
+    "hex": "0000000000000000000000"
+  },
+  {
+    "label": "edge/short-11/client-reply",
+    "direction": "client-reply",
+    "hex": "0000000000000000000000"
+  },
+  {
+    "label": "edge/query-tc-bit/client-query",
+    "direction": "client-query",
+    "hex": "500603000001000000000000027463076578616d706c650000010001"
+  },
+  {
+    "label": "edge/query-tc-bit/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "030001000001000000000000027463076578616d706c650000010001"
+  },
+  {
+    "label": "edge/query-tc-bit/upstream-2-udp",
+    "direction": "upstream-query",
+    "hex": "030001000001000000000000027463076578616d706c650000010001"
+  },
+  {
+    "label": "edge/query-tc-bit/upstream-11-tcp",
+    "direction": "upstream-query",
+    "hex": "030001000001000000000000027463076578616d706c650000010001"
+  },
+  {
+    "label": "edge/query-tc-bit/upstream-12-tcp",
+    "direction": "upstream-query",
+    "hex": "030001000001000000000000027463076578616d706c650000010001"
+  },
+  {
+    "label": "edge/query-tc-bit/client-reply",
+    "direction": "client-reply",
+    "hex": "500681800001000100000000027463076578616d706c650000010001c00c000100010000001e00040a000001"
+  },
+  {
+    "label": "edge/mixed-case/client-query",
+    "direction": "client-query",
+    "hex": "50070100000100000000000003577757074578616d706c6503434f4d0000010001"
+  },
+  {
+    "label": "edge/mixed-case/upstream-1-udp",
+    "direction": "upstream-query",
+    "hex": "04000100000100000000000003577757074578616d706c6503434f4d0000010001"
+  },
+  {
+    "label": "edge/mixed-case/upstream-11-tcp",
+    "direction": "upstream-query",
+    "hex": "04000100000100000000000003577757074578616d706c6503434f4d0000010001"
+  },
+  {
+    "label": "edge/mixed-case/upstream-2-udp",
+    "direction": "upstream-query",
+    "hex": "04000100000100000000000003577757074578616d706c6503434f4d0000010001"
+  },
+  {
+    "label": "edge/mixed-case/upstream-12-tcp",
+    "direction": "upstream-query",
+    "hex": "04000100000100000000000003577757074578616d706c6503434f4d0000010001"
+  },
+  {
+    "label": "edge/mixed-case/client-reply",
+    "direction": "client-reply",
+    "hex": "50078180000100010000000003577757074578616d706c6503434f4d0000010001c00c000100010000001e00040a000001"
+  }
+]
