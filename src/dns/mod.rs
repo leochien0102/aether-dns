@@ -99,10 +99,14 @@ fn question_end(wire: &[u8], at: usize) -> Result<usize, WireError> {
 
 /// The forwarding gate intentionally does not depend on hickory's full parser.
 pub fn check_query(wire: &[u8]) -> Result<(), WireError> {
-    if wire.len() < 12 || word(wire, 4)? != 1 {
+    if wire.len() < 12 || wire[2] & 0x80 != 0 || word(wire, 4)? != 1 {
         return Err(WireError);
     }
-    question_end(wire, 12)?;
+    let end = question_end(wire, 12)?;
+    let name_len = end - 12 - 4;
+    if !(1..=255).contains(&name_len) {
+        return Err(WireError);
+    }
     Ok(())
 }
 
@@ -147,8 +151,8 @@ pub fn clear_tc(wire: &mut [u8]) -> Result<(), WireError> {
 pub fn synthetic_nodata(wire: &mut Vec<u8>) -> Result<(), WireError> {
     check_query(wire)?;
     let end = question_end(wire, 12)?;
-    wire[2] = (wire[2] & 0x79) | 0x80;
-    wire[3] = (wire[3] & 0x10) | 0x80;
+    wire[2] |= 0x80;
+    wire[3] = (wire[3] & 0xf0) | 0x80;
     wire[6..12].fill(0);
     wire.truncate(end);
     Ok(())

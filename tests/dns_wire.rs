@@ -82,7 +82,7 @@ fn dns_wire_corpus() {
     samples.push(("trailing garbage", garbage, end));
     for (label, b, end) in &samples {
         assert_eq!(cut_additional(b), Ok(*end), "{label}");
-        if *label == "two questions" {
+        if *label == "two questions" || b[2] & 0x80 != 0 {
             assert!(check_query(b).is_err());
         } else {
             assert!(check_query(b).is_ok(), "{label}");
@@ -143,7 +143,7 @@ fn dns_wire_bounds_and_nodata() {
 
 #[test]
 fn dns_wire_real_samples() {
-    let samples = include_str!("../spikes/m0-fixtures/wire-samples.json");
+    let samples = include_str!("data/wire/real-samples.json");
     let mut count = 0;
     for line in samples.lines() {
         if let Some(hex) = line
@@ -157,10 +157,59 @@ fn dns_wire_real_samples() {
                 .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
                 .collect();
             assert!(inspect(&bytes).is_ok(), "sample {count}");
-            assert!(check_query(&bytes).is_ok(), "sample {count}");
+            assert_eq!(
+                check_query(&bytes).is_ok(),
+                bytes[2] & 0x80 == 0,
+                "sample {count}"
+            );
             count += 1;
         }
     }
     assert_eq!(count, 38);
     println!("dns_wire real samples: {count}/38 parsed");
+}
+
+#[test]
+fn dns_wire_query_gate() {
+    let mut q = query(1);
+    q[2] = 0x7f; // opcode/AA/TC/RD are not a gate.
+    q[17..19].copy_from_slice(&65535u16.to_be_bytes());
+    q.extend_from_slice(&[0xde, 0xad]);
+    assert!(check_query(&q).is_ok());
+    q[2] |= 0x80;
+    assert!(check_query(&q).is_err(), "QR response must be rejected");
+    let mut two = query(1);
+    two[5] = 2;
+    two.extend_from_slice(&[0, 0, 1, 0, 1]);
+    assert!(check_query(&two).is_err());
+    assert!(check_query(&[0; 11]).is_err());
+    let mut long = query(1);
+    long.truncate(12);
+    for _ in 0..3 {
+        long.push(63);
+        long.extend_from_slice(&[b'a'; 63]);
+    }
+    long.push(61);
+    long.extend_from_slice(&[b'b'; 61]);
+    long.push(0);
+    long.extend_from_slice(&[0, 1, 0, 1]);
+    assert!(check_query(&long).is_ok(), "255 byte qname");
+    long[204] = 62;
+    long.insert(205, b'b');
+    assert!(check_query(&long).is_err(), "256 byte qname");
+}
+
+#[test]
+fn dns_wire_nodata_preserves_flags() {
+    let mut q = query(1);
+    q[2] = 0x7f;
+    q[3] = 0x7f;
+    opt(&mut q);
+    let original = q.clone();
+    synthetic_nodata(&mut q).unwrap();
+    assert_eq!(&q[2..4], &[0xff, 0xf0]);
+    assert_eq!(&q[..2], &original[..2]);
+    assert_eq!(&q[4..6], &original[4..6]);
+    assert_eq!(&q[6..12], &[0; 6]);
+    assert_eq!(&q[12..], &original[12..19]);
 }
