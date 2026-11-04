@@ -35,10 +35,11 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 不要用卡外的改进、顺手修复或额外测试替代验收；做不到就停，不扩成第二张卡的内容。
 
 第一步：运行 bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
-它会建好专用 git worktree 并打印工作目录。之后所有写入与命令都只在那个目录里进行；
+它会建好专用 git worktree 并打印工作目录。之后所有**写入与构建/测试命令**都只在那个目录里进行；
 如果任务卡「分支」写的是 main（T1.0/T1.1 的例外），直接在主检出工作，不运行这个脚本。
-不要修改 /workspace/openwrt/aether-dns（主检出），也不要碰 aether-proxy、archive 或 /workspace/openwrt 下的其他仓库。
-任务卡「必读」中列出的仓库外文件只读。
+不要修改 /workspace/openwrt/aether-dns（主检出），也不要碰其他卡的 worktree、archive 或 /workspace/openwrt 下的其他仓库。
+任务卡必读的 aether-proxy 文件（renderer、fixtures、component_version.uc/daemon.uc）**可以只读**；
+不要写入 aether-proxy，也不要在其中运行会写文件的命令。
 
 开工前在该目录中完整阅读：
 1. docs/tasks/README.md「执行约定」（本文件）
@@ -76,6 +77,9 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 ## 3. 禁止事项
 
 - 不准 `git push`、切换别的分支、修改主检出或其他 worktree/仓库。
+- **只读例外**：任务卡「必读」列出的 aether-proxy 文件（renderer、22 份 fixtures、
+  `component_version.uc`、`daemon.uc` 等）可以用 `cat`/`grep`/`git show` 只读；
+  不准写入、不准在其目录内运行会写文件的命令。**不需要把文件复制进 worktree。**
 - 不准 `sudo`、安装系统软件包、运行容器，除非任务卡明确允许（M1 卡不允许）。
 - 不准把 `main` merge/rebase 进本卡分支；冲突留给复审。
 - 不准修改 `docs/`（任务卡/设计文档）——发现矛盾写进报告，由设计负责人改。

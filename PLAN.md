@@ -33,7 +33,7 @@ P0 的基线是 `aether-proxy/src/lib/render/chinadns.uc` 与 `aether-proxy/test
 - 单 crate + 单二进制 `aether-dns`；Rust stable，edition 2024。
 - **异步运行时**：Tokio current-thread 起步；每个 listener 一个任务，每查询一个 task；不做多线程/多 worker，先保证行为正确。
 - **DNS 报文**：默认 `hickory-proto`；P0 的 golden/integration 验证；**不手写 strict9**。若 hickory 在 P0 行为上不匹配，先加薄适配；只有证据表明必须时才考虑最小自建解析器。
-- **配置**：自定义 chinadns-ng 配置行解析器；`-C`；未知/重复/非法值拒绝；不做完整 CLI。
+- **配置**：自定义 chinadns-ng 配置行解析器；`-C`；未知/非法值拒绝；重复按上游语义（可重复项追加、单值项最后生效）；不做完整 CLI。
 - **上游**：UDP/TCP 客户端；同组并发、首个合法响应；超时/重试用 chinadns-ng 默认；`tls://` 用 rustls（若 P0 需要）。
 - **路由**：列表匹配、tag、模式、default-tag、组优先级、tag:none IP 测试、首个合法响应；不顺序回退。
 - **nftset**：netlink 查询成员 + 添加元素；P0 最高技术风险，先 spike。
