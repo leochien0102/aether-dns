@@ -6,12 +6,16 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 
 /// M1: one attempt, one socket/connection per query, including TCP upstreams.
-pub async fn exchange(upstream: &Upstream, query: &[u8]) -> io::Result<Vec<u8>> {
+pub async fn exchange(
+    upstream: &Upstream,
+    query: &[u8],
+    client_protocol: Protocol,
+) -> io::Result<Vec<u8>> {
     tokio::time::timeout(Duration::from_secs(5), async {
         let addr = SocketAddr::new(upstream.ip, upstream.port.unwrap_or(53));
         let mut response = vec![0; 65535];
-        match upstream.protocol {
-            Some(Protocol::Tcp) => {
+        match upstream.protocol.as_ref().unwrap_or(&client_protocol) {
+            Protocol::Tcp => {
                 let mut stream = TcpStream::connect(addr).await?;
                 stream.write_u16(query.len() as u16).await?;
                 stream.write_all(query).await?;
@@ -19,13 +23,13 @@ pub async fn exchange(upstream: &Upstream, query: &[u8]) -> io::Result<Vec<u8>> 
                 response.resize(len, 0);
                 stream.read_exact(&mut response).await?;
             }
-            Some(Protocol::Tls) => {
+            Protocol::Tls => {
                 return Err(io::Error::new(
                     io::ErrorKind::Unsupported,
                     "tls:// P0-conditional 未实现",
                 ));
             }
-            None | Some(Protocol::Udp) => {
+            Protocol::Udp => {
                 let bind = if addr.is_ipv4() {
                     "0.0.0.0:0"
                 } else {
