@@ -114,11 +114,12 @@ baseline diff 属于 M2；保留 chinadns-ng 回退；不扩 P1。
 
 **2026-11-04 所有者确认**：D1–D6 通过（M1 启动、IMP-004/005/006 批准、git+worktree、
 M1 纯转发到第一个 trust-dns、日期版本 `2026.11.04`、Tokio current-thread、M1 验收独立脚本）。
-任务卡见 [`docs/tasks/m1.md`](docs/tasks/m1.md)；先派 T1.0/T1.1，合并后并行
-T1.2/T1.3/T1.6/T1.7。
+任务卡见 [`docs/tasks/m1.md`](docs/tasks/m1.md)；T1.0/T1.1/T1.6 已完成，T1.2/T1.3 进行中；
+T1.4 等 T1.2+T1.3，T1.5/T1.7 随后，T1.8/T1.9 最后。
 
 **2026-11-04 复审**：T1.0（仓库与构建骨架）通过，提交 `bc6c16d`；`tests/review.sh`
 在干净 PATH 下通过（rustfmt/clippy 已装）。T1.1（worktree 脚本）通过，提交 `26c8f6e`；
-`start-task.sh` 的创建/复用/脏检出拒绝/卡号校验均实测。第一波 T1.2/T1.3/T1.6 并行发出。
+`start-task.sh` 的创建/复用/脏检出拒绝/卡号校验均实测。T1.6（CLI 版本/帮助）通过并合入
+`938f0cc`；T1.2/T1.3 继续，合并后发 T1.4。
 
 **M0 用时**：2026-11-04 单日完成，低于 3–5 天盒子。**M0 结束即停，不自动进入 M1。**
