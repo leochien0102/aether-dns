@@ -62,6 +62,17 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 （Rust 1.93.1），干净 PATH 下可直接运行；执行者不需要 `sudo`、不需要手动改 PATH。
 新环境缺少组件时，停在报告里说明，不要自行安装。
 
+### 2.2 分支/worktree 策略（2026-11-04 决定）
+
+- 从 **T1.2 起**，每张实现/验收卡一个**分支 + 一个 worktree**，从 `main` 建；不复用其他卡的分支或 worktree。
+- 例外：T1.0/T1.1（bootstrap，已在 `main` 完成）、设计负责人的 docs/review 提交。
+- 并行上限 **3 张**；强依赖或改同一文件的卡串行（T1.4→T1.5、T1.6→T1.7）。
+- 复审通过后由设计负责人 `git merge --no-ff --no-commit`，删除 `reports/<card>.md` 后提交 merge；
+  再删除 worktree 与分支，并在 `main` 上跑一次 `tests/review.sh`。
+- 复审不通过：执行者在**同一分支**修，不新开卡、不 merge。
+- 理由：`main` 始终可构建；每卡 diff 可审查/可回滚；多个 agent 可并行。worktree 开销在本机可忽略
+  （12 核、894 GB 空闲），远小于返工与“main 被半成品污染”的成本。
+
 ## 3. 禁止事项
 
 - 不准 `git push`、切换别的分支、修改主检出或其他 worktree/仓库。
@@ -119,7 +130,9 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 2. 跑 `bash tests/review.sh`，核对报告输出；逐条核对验收命令与证据。
 3. 读关键代码：范围、错误处理、停止条件、测试是否真的能失败（必要时做变异测试）。
 4. 检查没有 P1 功能、没有 aether-proxy 改动、没有把 M0 spike 原样搬入。
-5. 通过则合并建议；不通过则写清退回原因，执行者只改退回项，不扩大。
+5. 通过则按 §2.2 合并：`git merge --no-ff --no-commit <branch>` → `git rm reports/<card>.md` →
+   提交 merge → `git worktree remove <path>` → `git branch -d <branch>` → 在 `main` 跑 `tests/review.sh`。
+   不通过则写清退回原因，执行者只改退回项，不扩大。
 6. 里程碑验收由设计负责人跑 harness/基线与真机（M3），不只依赖执行者报告。
 
 ## 7. 卡片类型与硬性规则

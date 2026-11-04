@@ -118,6 +118,7 @@ M1 纯转发到第一个 trust-dns、日期版本 `2026.11.04`、Tokio current-t
 T1.2/T1.3/T1.6/T1.7。
 
 **2026-11-04 复审**：T1.0（仓库与构建骨架）通过，提交 `bc6c16d`；`tests/review.sh`
-在干净 PATH 下通过（rustfmt/clippy 已装）。T1.1（worktree 脚本）进行中。
+在干净 PATH 下通过（rustfmt/clippy 已装）。T1.1（worktree 脚本）通过，提交 `26c8f6e`；
+`start-task.sh` 的创建/复用/脏检出拒绝/卡号校验均实测。第一波 T1.2/T1.3/T1.6 并行发出。
 
 **M0 用时**：2026-11-04 单日完成，低于 3–5 天盒子。**M0 结束即停，不自动进入 M1。**
