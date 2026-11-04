@@ -8,3 +8,4 @@ name = "aether-dns"
 path = "src/main.rs"
 
 [dependencies]
+hickory-proto = "=0.25.2"
