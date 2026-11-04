@@ -190,6 +190,8 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 8. **发卡后文档变化**：必须同步/重建 worktree 或发「卡差量」，不能只口头通知。执行者开工后先跑
    `git -C <wt> diff --quiet main -- docs/tasks/m1.md docs/tasks/README.md PLAN.md`；非 0 就停，
    要卡差量，不按旧卡实现。
+9. **跨仓库测试数据**：测试必须在 `tests/data/` 自带副本或用环境变量指向；不得硬编码其他仓库的
+   绝对路径（T1.2 已有一处，已记录；跨机器/CI 前补副本）。
 
 ## 10. 当前卡组
 
