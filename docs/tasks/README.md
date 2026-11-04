@@ -17,7 +17,6 @@
 ## 2. 开工
 
 **T1.0、T1.1 在 `main`/主检出执行**（此时还没有 worktree 脚本）；T1.1 完成后，后续卡按下面流程：
-
 ```bash
 bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 ```
@@ -56,6 +55,12 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 运行 bash tests/review.sh，FAIL 必须为 0；按约定写 reports/<卡号>.md 并提交到本卡分支。
 不要 git push，提交信息不要带任何 AI 署名尾注。交回即停，不再改动分支和工作区。
 ```
+
+### 2.1 质量门环境
+
+`tests/review.sh` 需要 `cargo`、`rustfmt`、`clippy`。本 WSL 已安装 apt `rustfmt` / `rust-clippy`
+（Rust 1.93.1），干净 PATH 下可直接运行；执行者不需要 `sudo`、不需要手动改 PATH。
+新环境缺少组件时，停在报告里说明，不要自行安装。
 
 ## 3. 禁止事项
 
