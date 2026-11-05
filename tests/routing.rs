@@ -73,11 +73,18 @@ async fn route_case(
     let mut workers = Vec::new();
     let mut endpoints = Vec::new();
     for i in 0..5 {
-        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        // UDP and TCP have separate port namespaces; bind both before use and
+        // retry when another process owns the TCP side of the chosen port.
+        let (socket, listener) = loop {
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let port = socket.local_addr().unwrap().port();
+            match TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await {
+                Ok(listener) => break (socket, listener),
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+                Err(error) => panic!("TCP bind: {error}"),
+            }
+        };
         let port = socket.local_addr().unwrap().port();
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port))
-            .await
-            .unwrap();
         endpoints.push(Upstream {
             protocol: None,
             host: None,

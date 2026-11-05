@@ -147,9 +147,18 @@ impl Harness {
         mode: Reply,
         customize: impl FnOnce(&mut Config),
     ) -> Self {
-        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        // UDP and TCP have separate port namespaces; bind both before use and
+        // retry when another process owns the TCP side of the chosen port.
+        let (udp, tcp) = loop {
+            let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let address = udp.local_addr().unwrap();
+            match TcpListener::bind(address).await {
+                Ok(tcp) => break (udp, tcp),
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+                Err(error) => panic!("TCP bind: {error}"),
+            }
+        };
         let address = udp.local_addr().unwrap();
-        let tcp = TcpListener::bind(address).await.unwrap();
         let hits = Arc::new(AtomicUsize::new(0));
         let counter = hits.clone();
         let worker = tokio::spawn(async move {
