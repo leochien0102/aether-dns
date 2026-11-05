@@ -162,7 +162,7 @@ M2 验收：M0 `baseline.json` 的 9 场景/29 查询 + 13/13 sanity 对齐；�
 **2026-11-05 第一波结果**：M2-01（列表/tag）`e05bf8f`、M2-02（上游组并发）`14298cc`、
 M2-03（nftset netlink）`da4c67d` 全部复审合并；M2-04（按 tag/组路由）`5a45c10`；
 M2-05（`tag:none` 双查询/IP 测试）`c0d7c20`；M2-06（nftset 写入）`5193c60`；
-M2-07（过滤）`436d3c3`；M2-08（cache/stale）`83c002b`；M2-09（verdict cache）`06e9180`
-已合并；端口加固 `da17354`。main 194 个测试并行 review FAIL=0、22/22 启动、6/6 forward。
-M2-10（query TC 清位）已发；M2-05 的单侧失败回退是可用性策略、不是 parity，已记入
-`docs/tasks/m2.md` §5。
+M2-07（过滤）`436d3c3`；M2-08（cache/stale）`83c002b`；M2-09（verdict cache）`06e9180`；
+M2-10（query TC）`d46e7a2` 已合并；端口加固 `da17354`。main 204 个测试 review FAIL=0、
+22/22 启动、6/6 forward。M2-11（TCP 帧读超时）已发；M2-05 的单侧失败回退是可用性策略、
+不是 parity，已记入 `docs/tasks/m2.md` §5。
