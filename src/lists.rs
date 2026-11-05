@@ -58,27 +58,44 @@ fn load(paths: &[String], tag: RouteTag, names: &mut HashMap<Vec<u8>, RouteTag>)
 /// upstream dnl_get_tag, qname is the presentation name without a final root dot.
 /// Files that cannot be read are skipped, like upstream load_list. Lists are read
 /// per call; loading once at startup / wiring into the server is outside M2-01.
+#[allow(dead_code)] // M2-01 compatibility API; the server uses the load-once Router.
 pub fn resolve(qname: &str, config: &Config) -> RouteTag {
-    let mut names = HashMap::new();
-    for (index, group) in config.groups.iter().enumerate().rev() {
-        load(&group.dnl, RouteTag::Group(index), &mut names);
-    }
-    load(&config.gfwlist_file, RouteTag::Gfw, &mut names);
-    load(&config.chnlist_file, RouteTag::Chn, &mut names);
+    Router::load(config).resolve(qname)
+}
 
-    let mut suffix = last_eight_labels(qname.as_bytes());
-    loop {
-        if let Some(&tag) = names.get(suffix) {
-            return tag;
+pub struct Router {
+    names: HashMap<Vec<u8>, RouteTag>,
+    default: RouteTag,
+}
+
+impl Router {
+    pub fn load(config: &Config) -> Self {
+        let mut names = HashMap::new();
+        for (index, group) in config.groups.iter().enumerate().rev() {
+            load(&group.dnl, RouteTag::Group(index), &mut names);
         }
-        match suffix.iter().position(|&b| b == b'.') {
-            Some(dot) => suffix = &suffix[dot + 1..],
-            None => break,
-        }
+        load(&config.gfwlist_file, RouteTag::Gfw, &mut names);
+        load(&config.chnlist_file, RouteTag::Chn, &mut names);
+
+        let default = match config.default_tag {
+            Some(Tag::Chn) => RouteTag::Chn,
+            Some(Tag::Gfw) => RouteTag::Gfw,
+            Some(Tag::None) | None => RouteTag::None,
+        };
+        Self { names, default }
     }
-    match config.default_tag {
-        Some(Tag::Chn) => RouteTag::Chn,
-        Some(Tag::Gfw) => RouteTag::Gfw,
-        Some(Tag::None) | None => RouteTag::None,
+
+    pub fn resolve(&self, qname: &str) -> RouteTag {
+        let mut suffix = last_eight_labels(qname.as_bytes());
+        loop {
+            if let Some(&tag) = self.names.get(suffix) {
+                return tag;
+            }
+            match suffix.iter().position(|&b| b == b'.') {
+                Some(dot) => suffix = &suffix[dot + 1..],
+                None => break,
+            }
+        }
+        self.default
     }
 }

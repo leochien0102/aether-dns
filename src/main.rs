@@ -1,7 +1,9 @@
 mod config;
 mod dns;
+mod lists;
 mod server;
 mod upstream;
+mod upstream_group;
 
 use std::process::ExitCode;
 use tokio::signal::unix::{SignalKind, signal};
