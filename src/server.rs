@@ -244,12 +244,16 @@ async fn tcp_query(
     let query = tokio::select! {
         biased;
         _ = shutdown.changed() => return Ok(()),
-        query = async {
+        // One budget covers both the length prefix and the entire body.
+        query = timeout(Duration::from_secs(5), async {
             let len = stream.read_u16().await? as usize;
             let mut query = vec![0; len];
             stream.read_exact(&mut query).await?;
             Ok::<_, std::io::Error>(query)
-        } => query?,
+        }) => match query {
+            Ok(query) => query?,
+            Err(_) => return Ok(()), // Drop the stream: EOF, no reply or upstream work.
+        },
     };
     if dns::check_query(&query).is_err() {
         return Ok(());
