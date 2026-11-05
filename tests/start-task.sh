@@ -29,8 +29,8 @@ branch=$(awk -v card="$card" '
             print substr($0, RSTART + 1, RLENGTH - 2)
         exit
     }
-' "$repo/docs/tasks/m1.md")
-[[ -n $branch ]] || fail "card $card has no readable 分支 line in docs/tasks/m1.md"
+' "$repo"/docs/tasks/*.md)
+[[ -n $branch ]] || fail "card $card has no readable 分支 line in docs/tasks/*.md"
 git check-ref-format --branch "$branch" >/dev/null || fail "invalid task branch: $branch"
 
 # This gate also applies to reuse. Do not create even the parent when dirty.

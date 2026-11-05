@@ -49,7 +49,7 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 4. 任务卡本身（docs/tasks/m1.md 中对应小节）
 
 开工第一步后，先核对卡片版本；非 0 就停，不要按旧卡实现：
-  git -C <worktree> diff --quiet main -- docs/tasks/m1.md docs/tasks/README.md PLAN.md
+  git -C <worktree> diff --quiet main -- docs/tasks PLAN.md
 非 0 表示 worktree 里的卡/文档不是当前 main 版本：向设计负责人要「卡差量」或重建 worktree。
 
 只做任务卡范围内的事。设计文档没覆盖、或卡上写了「停点」的情况，不要自行决定：
@@ -188,7 +188,7 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
    跑完删除。
 7. **入口提示复审**：目标、验收、只读授权、允许改动、停点五件事齐全；不写卡外要求。
 8. **发卡后文档变化**：必须同步/重建 worktree 或发「卡差量」，不能只口头通知。执行者开工后先跑
-   `git -C <wt> diff --quiet main -- docs/tasks/m1.md docs/tasks/README.md PLAN.md`；非 0 就停，
+   `git -C <wt> diff --quiet main -- docs/tasks PLAN.md`；非 0 就停，
    要卡差量，不按旧卡实现。
 9. **跨仓库测试数据**：测试必须在 `tests/data/` 自带副本或用环境变量指向；不得硬编码其他仓库的
    绝对路径（T1.2 已有一处，已记录；跨机器/CI 前补副本）。
@@ -197,4 +197,15 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 
 | 文件 | 里程碑 | 状态 |
 |---|---|---|
-| [m1.md](m1.md) | M1 骨架：T1.0–T1.9（构建、worktree、配置、wire、UDP/TCP 转发、CLI、信号、两项验收） | **APPROVED**；T1.0/T1.1 先在主检出，T1.2 起用 worktree |
+| [m1.md](m1.md) | M1 骨架：T1.0–T1.9（构建、worktree、配置、wire、UDP/TCP 转发、CLI、信号、两项验收） | **APPROVED**；全部完成 |
+| [m2.md](m2.md) | M2 P0 行为：列表/tag、上游组、nftset、路由、IP 测试、过滤、cache、baseline 差分 | **进行中**；第一波 M2-01/02/03 |
+
+## 11. M2 执行约定（2026-11-05）
+
+- 范围锁在 PLAN §2 的 P0；P1（hosts、DoT、cache-db、完整 CLI、chnlist-first、6 组）不做。
+- nftset 测试用 **unprivileged `unshare -Urn` + `nft` 建表**，不需要 sudo/root 宿主；
+  生产实现必须 netlink，不能用 `nft` CLI。
+- M0 `baseline.json` 的 9 场景/29 查询与 13 条 sanity 是 M2 reviewer 验收门；执行者用 fake upstream
+  做卡内测试，不要求在本机跑 root harness。
+- cache 只做内存（无 DB）；TTL 原地递减，不重编码。
+- 第一波 M2-01/02/03 并行；M2-04 等前两张列表/上游卡合并后再拆。

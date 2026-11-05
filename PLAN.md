@@ -140,3 +140,21 @@ M1 的 10 张卡（T1.0–T1.9）全部复审合并；当前 `main` HEAD `913519
   全部未实现；M1 的纯转发行为不写成 parity `match`。
 - 已知差距与 M2 建议顺序见 `M1-REPORT.md` §5–§6。
 - **M1 结束即停；等所有者确认后再进 M2，不自动开工。**
+
+## 12. M2 计划（2026-11-05 启动）
+
+目标：把 M1 的“所有查询走第一个 trust”替换为 chinadns-ng P0 行为；范围锁在 §2 的 P0，
+不进入 P1。任务卡见 [`docs/tasks/m2.md`](docs/tasks/m2.md)，第一波：
+
+- **M2-01 列表/tag/组优先级**：qname + Config → chn/gfw/none/自定义组；最长后缀、label 边界、
+  自定义组优先于 chn/gfw、chn/gfw 默认 gfw 先。
+- **M2-02 上游组并发**：一个组的多上游并发、首个合法响应、其余取消。
+- **M2-03 nftset netlink 模块**：成员测试 + 批量添加，test-then-add/ACK/EEXIST 重试；
+  用 unprivileged `unshare -Urn` + `nft` 建表测试，不需要 sudo。
+
+后续（等第一波结论再拆）：M2-04 路由分发、M2-05 `tag:none` 双查询 + IP 测试、
+M2-06 nftset 写入、M2-07 过滤、M2-08 cache/stale、M2-09 verdict cache、
+M2-10 协议补齐（TC/question/TCP 读超时）、M2-11 baseline 差分验收。
+
+M2 验收：M0 `baseline.json` 的 9 场景/29 查询 + 13/13 sanity 对齐；全量测试/review 通过；
+`M2-REPORT.md` 收口。M2 完成前不启动 P1。
