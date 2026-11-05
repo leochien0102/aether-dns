@@ -10,7 +10,17 @@ struct Server {
 }
 impl Server {
     fn start(config: &str) -> Self {
-        let reservation = UdpSocket::bind("127.0.0.1:0").unwrap();
+        // The server binds UDP and TCP on the same port; reserve both and retry
+        // if another process owns the TCP side of the chosen port.
+        let (reservation, tcp_reservation) = loop {
+            let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+            let port = udp.local_addr().unwrap().port();
+            match TcpListener::bind(("127.0.0.1", port)) {
+                Ok(tcp) => break (udp, tcp),
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
+                Err(error) => panic!("TCP bind: {error}"),
+            }
+        };
         let port = reservation.local_addr().unwrap().port();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join(format!("target/udp-forward-{port}.conf"));
@@ -19,7 +29,7 @@ impl Server {
             format!("bind-addr 127.0.0.1\nbind-port {port}\n{config}"),
         )
         .unwrap();
-        drop(reservation);
+        drop((reservation, tcp_reservation));
         let mut child = Command::new(env!("CARGO_BIN_EXE_aether-dns"))
             .args(["-C", path.to_str().unwrap()])
             .stderr(Stdio::piped())
