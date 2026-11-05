@@ -202,6 +202,9 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
     只改输入/期望/注释，不借机改生产语义。
 13. **卡差量复盘**：每次停点确认后，在 `docs/tasks/README.md` 或卡里补一条“为什么发卡时没发现”；
     同类原因第二次出现，先改流程再发下一卡。
+14. **影响表必须有 grep 证据**：行为变更卡的影响表不能凭印象写“无过滤/无某指令”。发卡前对
+    `tests/` 逐个 grep 相关配置字符串（至少 `no-ipv6`、`filter-qtype`、`default-tag`、
+    `add-taggfw-ip`、`group-ipset`、`cache`），把命中文件与处理方式写进卡。
 
 ## 10. 当前卡组
 
