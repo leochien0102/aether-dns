@@ -12,6 +12,9 @@ cargo build --bin aether-dns --target-dir "$root/target"
 # M1 的“全部到第一个 trust”假设已被 M2-04 路由取代，本脚本只做传输 smoke。
 # M2-07: strip filters only from the temporary copy to keep the 6/6 matrix.
 export AETHER_FORWARD_STRIP_FILTERS=1
+# M2-08: repeated UDP/TCP question keys must still reach the fake upstream.
+# Strip only cache/cache-stale in the temporary copy, not verdict-cache.
+export AETHER_FORWARD_STRIP_CACHE=1
 exec python3 -B tests/fake_upstream.py \
     "$root/target/debug/aether-dns" \
     "$fixtures/t14-global-t1/expected/chinadns.conf" "$EXPECTED_RA"
