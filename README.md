@@ -8,6 +8,7 @@
 - [PARITY-MATRIX.md](PARITY-MATRIX.md)：功能/行为对照矩阵 + P0 profile。
 - [IMPROVEMENTS.md](IMPROVEMENTS.md)：改进/修正登记（未批准不实现）。
 - [M0-REPORT.md](M0-REPORT.md)：M0 风险 spike 报告（nftset/parser/fixture harness，go/no-go）。
+- [M1-REPORT.md](M1-REPORT.md)：M1 可跑骨架报告（49 测试、22/22 启动、6/6 转发矩阵、已知差距）。
 - [spikes/](spikes/)：M0 最小原型与可复跑证据（非生产代码）。
 - [docs/tasks/](docs/tasks/README.md)：任务卡与执行约定（M1 已确认，T1.0/T1.1 开始执行）。
 
@@ -17,5 +18,5 @@
 - 便携包：`../archive/aether-dns-2026-11-04-src.tar.gz`
 - 停止记录：`../archive/aether-dns-2026-11-04/STOP.md`
 
-当前阶段：**M0 完成（2026-11-04）**；M1 进行中，T1.0–T1.8 已复审通过，T1.9 进行中。
-生产代码已开始（M1 骨架：CLI、配置、wire、UDP/TCP 转发、信号收尾）；spike 代码只在 `spikes/`，不要直接搬进 `src/`。
+当前阶段：**M1 完成（2026-11-05）**：10/10 卡复审合并，49 测试、22/22 启动、6/6 转发矩阵通过；
+**M1 结束即停**，等所有者确认后再进 M2（P0 行为等价）。M1 不是 P0 drop-in。

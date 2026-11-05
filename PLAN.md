@@ -123,6 +123,20 @@ T1.5 已发，T1.7/T1.8 随后，T1.9 最后。
 `938f0cc`；T1.2（配置解析）通过并合入 `a1cdc25`；T1.3（wire）返修后通过并合入 `cacf4db`；
 T1.4（UDP 单上游转发）通过并合入 `67b3422`。T1.5（TCP 单上游转发）通过并合入 `44aa7b3`；
 T1.8（22/22 启动验收）通过并合入 `3887a52`；T1.7（信号/退出）通过并合入 `65132ba`；
-T1.9（转发矩阵）进行中。
+T1.9（转发矩阵）通过并合入 `913519f`。
 
 **M0 用时**：2026-11-04 单日完成，低于 3–5 天盒子。**M0 结束即停，不自动进入 M1。**
+
+## 11. M1 结果（2026-11-05）
+
+M1 的 10 张卡（T1.0–T1.9）全部复审合并；当前 `main` HEAD `913519f`。详见
+[`M1-REPORT.md`](M1-REPORT.md)。
+
+- 验收：`tests/review.sh` 49 个测试 FAIL=0；`tests/acceptance_startup.sh` 22/22；
+  `tests/acceptance_forward.sh` 6/6；`-V` 模拟 aether-proxy 最小版本检查通过。
+- 实现：单 crate/单二进制；`-C` 配置、hickory + raw-forward、UDP/TCP、第一个 trust、
+  SERVFAIL、500 ms 信号排空。
+- **M1 不是 P0 drop-in**：组/列表/tag/`tag:none` IP 测试/nftset/cache/`no-ipv6`/`filter-qtype`/DoT
+  全部未实现；M1 的纯转发行为不写成 parity `match`。
+- 已知差距与 M2 建议顺序见 `M1-REPORT.md` §5–§6。
+- **M1 结束即停；等所有者确认后再进 M2，不自动开工。**
