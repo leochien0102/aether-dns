@@ -192,13 +192,23 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
    要卡差量，不按旧卡实现。
 9. **跨仓库测试数据**：测试必须在 `tests/data/` 自带副本或用环境变量指向；不得硬编码其他仓库的
    绝对路径（T1.2 已有一处，已记录；跨机器/CI 前补副本）。
+10. **行为变更影响面**：卡改变可观察行为时，必须列出**所有**既有 acceptance/test 的 fixture 假设，
+    逐条写“继续通过 / 需在本卡更新 / 作废”，并把需更新的文件加入允许改动。
+    禁止只写“X 不回归”而不核对具体 fixture。
+11. **发卡前跑全验收**：在当前 main 或临时 worktree 跑 `tests/review.sh`、`tests/acceptance_startup.sh`、
+    `tests/acceptance_forward.sh`、`tests/nftset_acceptance.sh`；若新行为会让某个验收失败，
+    卡内必须包含迁移，否则不发。
+12. **迁移测试不算扩范围**：为保持验收可执行而更新既有测试/脚本，必须在卡中显式授权；
+    只改输入/期望/注释，不借机改生产语义。
+13. **卡差量复盘**：每次停点确认后，在 `docs/tasks/README.md` 或卡里补一条“为什么发卡时没发现”；
+    同类原因第二次出现，先改流程再发下一卡。
 
 ## 10. 当前卡组
 
 | 文件 | 里程碑 | 状态 |
 |---|---|---|
 | [m1.md](m1.md) | M1 骨架：T1.0–T1.9（构建、worktree、配置、wire、UDP/TCP 转发、CLI、信号、两项验收） | **APPROVED**；全部完成 |
-| [m2.md](m2.md) | M2 P0 行为：列表/tag、上游组、nftset、路由、IP 测试、过滤、cache、baseline 差分 | **进行中**；第一波 M2-01/02/03 |
+| [m2.md](m2.md) | M2 P0 行为：列表/tag、上游组、nftset、路由、IP 测试、过滤、cache、baseline 差分 | **进行中**；M2-01/02/03 完成，M2-04 进行中 |
 
 ## 11. M2 执行约定（2026-11-05）
 
