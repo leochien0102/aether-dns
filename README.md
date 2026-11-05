@@ -17,5 +17,5 @@
 - 便携包：`../archive/aether-dns-2026-11-04-src.tar.gz`
 - 停止记录：`../archive/aether-dns-2026-11-04/STOP.md`
 
-当前阶段：**M0 完成（2026-11-04）**；M1 进行中，T1.0–T1.6、T1.8 已复审通过，T1.7 进行中。
-生产代码已开始（M1 骨架：CLI、配置、wire、UDP/TCP 转发）；spike 代码只在 `spikes/`，不要直接搬进 `src/`。
+当前阶段：**M0 完成（2026-11-04）**；M1 进行中，T1.0–T1.8 已复审通过，T1.9 进行中。
+生产代码已开始（M1 骨架：CLI、配置、wire、UDP/TCP 转发、信号收尾）；spike 代码只在 `spikes/`，不要直接搬进 `src/`。
