@@ -5,20 +5,29 @@ use crate::{
     upstream_group,
 };
 
+#[path = "ip_test.rs"]
+pub mod ip_test;
+use ip_test::{IpTest, NftIpTest};
+
 struct Routing {
     config: Config,
     router: Router,
+    ip_test: Arc<dyn IpTest>,
 }
 
 impl Routing {
-    fn upstreams(&self, query: &[u8]) -> std::io::Result<&[Upstream]> {
+    fn route(&self, query: &[u8]) -> std::io::Result<(RouteTag, hickory_proto::rr::RecordType)> {
         let inspection = dns::inspect(query).map_err(|_| wire_error(dns::WireError))?;
-        let (name, _, _) = inspection
+        let (name, qtype, _) = inspection
             .question
             .ok_or_else(|| wire_error(dns::WireError))?;
         let name = name.to_ascii();
         let tag = self.router.resolve(name.strip_suffix('.').unwrap_or(&name));
-        Ok(match tag {
+        Ok((tag, qtype))
+    }
+
+    fn upstreams(&self, tag: RouteTag) -> &[Upstream] {
+        match tag {
             RouteTag::Chn => &self.config.china_dns,
             RouteTag::Gfw => &self.config.trust_dns,
             RouteTag::Group(i) => self
@@ -26,9 +35,8 @@ impl Routing {
                 .groups
                 .get(i)
                 .map_or(&[], |g| g.upstream.as_slice()),
-            // Temporary M1 fallback, NOT parity: M2-05 replaces this with IP testing.
-            RouteTag::None => &self.config.trust_dns[..self.config.trust_dns.len().min(1)],
-        })
+            RouteTag::None => unreachable!("none uses dual exchange"),
+        }
     }
 }
 use std::net::{Ipv4Addr, SocketAddr};
@@ -41,7 +49,17 @@ use tokio::time::{Duration, timeout};
 
 pub async fn run(
     config: Config,
+    shutdown: watch::Receiver<bool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let ip_test = Arc::new(NftIpTest::new(config.ipset_name4.clone()));
+    run_with_ip_test(config, shutdown, ip_test).await
+}
+
+/// Injection point for deterministic membership tests, independent of nft tables.
+pub async fn run_with_ip_test(
+    config: Config,
     mut shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     config.validate_startup()?;
     let router = Router::load(&config);
@@ -65,7 +83,11 @@ pub async fn run(
             sockets.push(Arc::new(socket));
         }
     }
-    let upstream = Arc::new(Routing { config, router });
+    let upstream = Arc::new(Routing {
+        config,
+        router,
+        ip_test,
+    });
     let mut tasks = JoinSet::new();
     for socket in sockets {
         eprintln!("listening UDP {}", socket.local_addr()?);
@@ -150,7 +172,6 @@ pub async fn run(
         });
     }
     // Keep the M1 stderr readiness/shutdown protocol unchanged.
-    println!("routing: tag:none temporarily uses first trust-dns; M2-05 replaces this fallback");
     shutdown.changed().await?;
     eprintln!("shutdown: draining queries (500 ms maximum)");
     // One shared budget, not 500 ms per listener or per query. Dropping the
@@ -226,14 +247,79 @@ async fn forward(
     client_id: u16,
     client_protocol: Protocol,
 ) -> std::io::Result<Vec<u8>> {
-    let upstreams = upstream.upstreams(query)?;
-    let mut response = upstream_group::exchange(upstreams, query, client_protocol).await?;
+    let (tag, qtype) = upstream.route(query)?;
+    let mut response = if tag == RouteTag::None {
+        none_exchange(upstream, query, qtype, client_protocol).await?
+    } else {
+        upstream_group::exchange(upstream.upstreams(tag), query, client_protocol).await?
+    };
     dns::set_id(&mut response, client_id).map_err(wire_error)?;
     dns::set_ra(&mut response).map_err(wire_error)?;
     if matches!(response[3] & 0x0f, 0 | 3) && response[2] & 2 == 0 {
         dns::truncate_additional(&mut response).map_err(wire_error)?;
     }
     Ok(response)
+}
+
+// This decision belongs only to the current query, never a cached verdict.
+fn use_china_reply(response: &[u8], ip_test: &dyn IpTest) -> bool {
+    // Like dns_test_ip / use_china_reply: non-good replies are other_case.
+    if response[2] & 2 != 0 {
+        return true;
+    }
+    if !matches!(response[3] & 15, 0 | 3) {
+        return false;
+    }
+    dns::inspect(response)
+        .ok()
+        .and_then(|inspection| inspection.answers.first().copied())
+        .is_some_and(|(ip, _)| ip.is_ipv4() && ip_test.is_china(ip))
+}
+
+async fn none_exchange(
+    routing: &Routing,
+    query: &[u8],
+    qtype: hickory_proto::rr::RecordType,
+    protocol: Protocol,
+) -> std::io::Result<Vec<u8>> {
+    use hickory_proto::rr::RecordType;
+    let config = &routing.config;
+    if !matches!(qtype, RecordType::A | RecordType::AAAA) {
+        let all: Vec<_> = config
+            .china_dns
+            .iter()
+            .chain(&config.trust_dns)
+            .cloned()
+            .collect();
+        return upstream_group::exchange(&all, query, protocol).await;
+    }
+    if config.china_dns.is_empty() {
+        return upstream_group::exchange(&config.trust_dns, query, protocol).await;
+    }
+    if config.trust_dns.is_empty() {
+        return upstream_group::exchange(&config.china_dns, query, protocol).await;
+    }
+    let china = upstream_group::exchange(&config.china_dns, query, protocol.clone());
+    let trust = upstream_group::exchange(&config.trust_dns, query, protocol);
+    tokio::pin!(china, trust);
+    tokio::select! {
+        china_result = &mut china => {
+            if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, &*routing.ip_test)) {
+                return china_result;
+            }
+            // A failed side cannot hide the other side's legal response.
+            trust.await.or(china_result)
+        }
+        trust_result = &mut trust => {
+            // Trust arriving first is held until china decides (or fails).
+            let china_result = china.await;
+            if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, &*routing.ip_test)) {
+                china_result
+            } else {
+                trust_result.or(china_result)
+            }
+        }
+    }
 }
 
 fn wire_error(_: dns::WireError) -> std::io::Error {
