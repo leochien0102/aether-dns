@@ -52,9 +52,15 @@ M0 证据（2026-11-04，详见 [M0-REPORT.md](M0-REPORT.md)）：
 - P0-05/06/10：nftset spike 的 dump/test/add/EEXIST/重试 + harness 的 `gfw4/uproxy4/udirect4` 断言。
 - P0-11：**未验证**（M0 不做信号/重启）；P0-12：22 份 fixture 均未使用 `tls://`，仍未验证。
 
-**M1 状态（2026-11-05）**：M1 只做可跑骨架，上表 P0 行仍为 `draft`，不因 M1 改判 `match`。
-组/列表/tag/`tag:none` IP 测试/nftset/cache/`no-ipv6`/`filter-qtype`/DoT 均未实现；详见
-[M1-REPORT.md](M1-REPORT.md) §5。M2 才按 `baseline.json` 逐项验收 P0。
+**M2 状态（2026-11-05）**：P0-01/02 22/22 启动；P0-03/04/05/06/07/08/09/10 在 M0 固定
+9 场景/29 查询 + 13/13 sanity 上 `diff=0`（`tests/acceptance_baseline.sh`，unprivileged netns）。
+这只覆盖固定 baseline，不等于全量 chinadns-ng parity；M2-05 单侧失败回退、M2-08 仅正向 A/AAAA、
+IPv4 set、verdict key/淘汰等 known gap 见 [M2-REPORT.md](M2-REPORT.md) §5。
+P0-11 信号/退出已实现，重启/服务脚本未真机验证；P0-12 22 份 fixture 未用 `tls://`，DoT 未实现。
+
+**M1 历史（2026-11-05）**：M1 只做可跑骨架，当时上表 P0 行仍为 `draft`；组/列表/tag/
+`tag:none` IP 测试/nftset/cache/`no-ipv6`/`filter-qtype`/DoT 均未实现，详见
+[M1-REPORT.md](M1-REPORT.md) §5。M2 已完成，见上。
 
 P0 不做：完整短选项集合、`cache-db`/`cache-refresh`、`hosts`/`dns-rr-ip`、`noip-as-chnip`/`fair-mode`/`reuse-port`、完整 6 自定义组、独立 DoT 全量、IPv6 代理。以上归 P1/P2，除非 aether-proxy 实际配置用到。
 

@@ -9,6 +9,7 @@
 - [IMPROVEMENTS.md](IMPROVEMENTS.md)：改进/修正登记（未批准不实现）。
 - [M0-REPORT.md](M0-REPORT.md)：M0 风险 spike 报告（nftset/parser/fixture harness，go/no-go）。
 - [M1-REPORT.md](M1-REPORT.md)：M1 可跑骨架报告（49 测试、22/22 启动、6/6 转发矩阵、已知差距）。
+- [M2-REPORT.md](M2-REPORT.md)：M2 P0 行为报告（210 测试、baseline 29/29、13/13 sanity、已知差距）。
 - [spikes/](spikes/)：M0 最小原型与可复跑证据（非生产代码）。
 - [docs/tasks/](docs/tasks/README.md)：任务卡与执行约定（M1 全部完成；M2 第一波进行中）。
 
@@ -18,5 +19,6 @@
 - 便携包：`../archive/aether-dns-2026-11-04-src.tar.gz`
 - 停止记录：`../archive/aether-dns-2026-11-04/STOP.md`
 
-当前阶段：**M2 进行中（2026-11-05）**：P0 行为等价；M2-01–M2-11 已合并，M2-12 baseline 差分进行中。
-M1 骨架已完成（49 测试/22 启动/6 转发）。M2 不自动进入 P1。
+当前阶段：**M2 完成（2026-11-05）**：12/12 卡合并；210 测试、22/22 启动、6/6 转发、
+baseline 29/29 + 13/13 sanity、diff=0。**M2 结束即停**，等所有者确认后再进 M3/P1。
+M2 只覆盖 M0 固定 9/29，不是全量 chinadns-ng parity。

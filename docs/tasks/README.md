@@ -214,7 +214,7 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 | 文件 | 里程碑 | 状态 |
 |---|---|---|
 | [m1.md](m1.md) | M1 骨架：T1.0–T1.9（构建、worktree、配置、wire、UDP/TCP 转发、CLI、信号、两项验收） | **APPROVED**；全部完成 |
-| [m2.md](m2.md) | M2 P0 行为：列表/tag、上游组、nftset、路由、IP 测试、过滤、cache、baseline 差分 | **进行中**；M2-01/02/03 完成，M2-04 进行中 |
+| [m2.md](m2.md) | M2 P0 行为：列表/tag、上游组、nftset、路由、IP 测试、过滤、cache、baseline 差分 | **完成**；12/12 卡，baseline 29/29 + 13/13 |
 
 ## 11. M2 执行约定（2026-11-05）
 

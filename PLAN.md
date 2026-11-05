@@ -166,3 +166,16 @@ M2-07（过滤）`436d3c3`；M2-08（cache/stale）`83c002b`；M2-09（verdict c
 M2-10（query TC）`d46e7a2`、M2-11（TCP 帧读超时）`d64627c` 已合并；端口加固 `da17354`。
 main 210 个测试 review FAIL=0、22/22 启动、6/6 forward。M2-12（baseline 差分/M2 收口）已发；
 M2-05 的单侧失败回退是可用性策略、不是 parity，已记入 `docs/tasks/m2.md` §5。
+
+## 13. M2 结果（2026-11-05）
+
+M2 的 12 张卡（M2-01–M2-12）全部复审合并；代码合并最后 `c5c72e7`。详见
+[`M2-REPORT.md`](M2-REPORT.md)。
+
+- 验收：210 个 Rust 测试 FAIL=0；22/22 启动；6/6 转发；M0 baseline **29/29 查询、13/13 sanity、
+  diff=0**（`tests/acceptance_baseline.sh`，不需要 sudo）。
+- 实现：列表/tag、组并发、nftset netlink 读写、路由、`tag:none` IP 测试、过滤、正向 cache/stale、
+  verdict cache、query TC、TCP 5 s 帧读超时。
+- 已知差距：M2-05 单侧失败回退不是 parity；M2-08 仅正向 A/AAAA；IPv4 set；verdict key/淘汰；
+  response question 非 parity；无 TLS/DoT；baseline 只覆盖固定 9/29。见 M2-REPORT §5。
+- **M2 完成即停；等所有者确认 M3 范围后再拆卡，不自动开工。**
