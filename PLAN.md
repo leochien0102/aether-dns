@@ -160,6 +160,7 @@ M2 验收：M0 `baseline.json` 的 9 场景/29 查询 + 13/13 sanity 对齐；�
 `M2-REPORT.md` 收口。M2 完成前不启动 P1。
 
 **2026-11-05 第一波结果**：M2-01（列表/tag）`e05bf8f`、M2-02（上游组并发）`14298cc`、
-M2-03（nftset netlink）`da4c67d` 全部复审合并；main 94 个测试 FAIL=0、22/22 启动、
-nftset 验收通过。M2-04（按 tag/组路由）`5a45c10` 已合并；main 105 个测试 FAIL=0、6/6 forward。
-M2-05（`tag:none` 双查询/IP 测试）已发；verdict/cache 留给 M2-09。
+M2-03（nftset netlink）`da4c67d` 全部复审合并；M2-04（按 tag/组路由）`5a45c10`；
+M2-05（`tag:none` 双查询/IP 测试）`c0d7c20` 已合并。main 125 个测试 FAIL=0、22/22 启动、
+6/6 forward。M2-06（nftset 写入）已发；M2-05 的单侧失败回退是可用性策略、不是 parity，
+已记入 `docs/tasks/m2.md` §5。
