@@ -262,13 +262,15 @@ async fn default_gfw_routes_trust() {
     .await;
 }
 #[tokio::test(flavor = "current_thread")]
-async fn none_temporarily_routes_first_trust_only() {
+async fn none_uses_china_when_trust_empty() {
+    // M2-05: an absent trust group must not prevent a legal china reply.
+    // Dual-group decisions and all-upstream hit counts are covered in none.rs.
     route_case(
         "unlisted.example",
         Some(Tag::None),
         false,
+        Some(0),
         Some(1),
-        None,
         false,
     )
     .await;
