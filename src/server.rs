@@ -5,14 +5,21 @@ use crate::{
     upstream_group,
 };
 
+// Standalone integration targets have no crate-root nftset module. The reader
+// and writer each include the unchanged M2-03 backend in their own namespace.
+#[allow(clippy::duplicate_mod)]
 #[path = "ip_test.rs"]
 pub mod ip_test;
 use ip_test::{IpTest, NftIpTest};
+#[path = "ip_writer.rs"]
+pub mod ip_writer;
+use ip_writer::{IpWriter, NftWriter, NoopWriter};
 
 struct Routing {
     config: Config,
     router: Router,
     ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
 }
 
 impl Routing {
@@ -52,14 +59,25 @@ pub async fn run(
     shutdown: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ip_test = Arc::new(NftIpTest::new(config.ipset_name4.clone()));
-    run_with_ip_test(config, shutdown, ip_test).await
+    run_with_ip_writer(config, shutdown, ip_test, Arc::new(NftWriter::default())).await
 }
 
 /// Injection point for deterministic membership tests, independent of nft tables.
+#[allow(dead_code)]
 pub async fn run_with_ip_test(
+    config: Config,
+    shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_ip_writer(config, shutdown, ip_test, Arc::new(NoopWriter)).await
+}
+
+/// Injection point for deterministic best-effort writes without nft tables.
+pub async fn run_with_ip_writer(
     config: Config,
     mut shutdown: watch::Receiver<bool>,
     ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     config.validate_startup()?;
     let router = Router::load(&config);
@@ -87,6 +105,7 @@ pub async fn run_with_ip_test(
         config,
         router,
         ip_test,
+        ip_writer,
     });
     let mut tasks = JoinSet::new();
     for socket in sockets {
@@ -258,6 +277,7 @@ async fn forward(
     if matches!(response[3] & 0x0f, 0 | 3) && response[2] & 2 == 0 {
         dns::truncate_additional(&mut response).map_err(wire_error)?;
     }
+    ip_writer::write_reply(&upstream.config, tag, &response, &*upstream.ip_writer);
     Ok(response)
 }
 
