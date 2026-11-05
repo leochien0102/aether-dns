@@ -1,4 +1,36 @@
-use crate::{config::Config, config::Protocol, dns, upstream};
+use crate::{
+    config::{Config, Protocol, Upstream},
+    dns,
+    lists::{RouteTag, Router},
+    upstream_group,
+};
+
+struct Routing {
+    config: Config,
+    router: Router,
+}
+
+impl Routing {
+    fn upstreams(&self, query: &[u8]) -> std::io::Result<&[Upstream]> {
+        let inspection = dns::inspect(query).map_err(|_| wire_error(dns::WireError))?;
+        let (name, _, _) = inspection
+            .question
+            .ok_or_else(|| wire_error(dns::WireError))?;
+        let name = name.to_ascii();
+        let tag = self.router.resolve(name.strip_suffix('.').unwrap_or(&name));
+        Ok(match tag {
+            RouteTag::Chn => &self.config.china_dns,
+            RouteTag::Gfw => &self.config.trust_dns,
+            RouteTag::Group(i) => self
+                .config
+                .groups
+                .get(i)
+                .map_or(&[], |g| g.upstream.as_slice()),
+            // Temporary M1 fallback, NOT parity: M2-05 replaces this with IP testing.
+            RouteTag::None => &self.config.trust_dns[..self.config.trust_dns.len().min(1)],
+        })
+    }
+}
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -12,16 +44,16 @@ pub async fn run(
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     config.validate_startup()?;
-    let upstream = config.trust_dns.first().ok_or("missing trust-dns")?.clone();
+    let router = Router::load(&config);
     let addresses = if config.bind_addr.is_empty() {
         vec![Ipv4Addr::LOCALHOST]
     } else {
-        config.bind_addr
+        config.bind_addr.clone()
     };
     let ports = if config.bind_port.is_empty() {
         vec![53]
     } else {
-        config.bind_port
+        config.bind_port.clone()
     };
     // Bind everything before starting any listener, so partial startup fails closed.
     let mut sockets = Vec::new();
@@ -33,6 +65,7 @@ pub async fn run(
             sockets.push(Arc::new(socket));
         }
     }
+    let upstream = Arc::new(Routing { config, router });
     let mut tasks = JoinSet::new();
     for socket in sockets {
         eprintln!("listening UDP {}", socket.local_addr()?);
@@ -116,6 +149,8 @@ pub async fn run(
             while queries.join_next().await.is_some() {}
         });
     }
+    // Keep the M1 stderr readiness/shutdown protocol unchanged.
+    println!("routing: tag:none temporarily uses first trust-dns; M2-05 replaces this fallback");
     shutdown.changed().await?;
     eprintln!("shutdown: draining queries (500 ms maximum)");
     // One shared budget, not 500 ms per listener or per query. Dropping the
@@ -130,7 +165,7 @@ pub async fn run(
 // M1: exactly one framed query and response per client connection.
 async fn tcp_query(
     mut stream: TcpStream,
-    upstream: &crate::config::Upstream,
+    upstream: &Routing,
     mut id: u16,
     peer: SocketAddr,
     mut shutdown: watch::Receiver<bool>,
@@ -163,7 +198,7 @@ async fn tcp_query(
 }
 
 async fn handle_query(
-    upstream: &crate::config::Upstream,
+    upstream: &Routing,
     mut query: Vec<u8>,
     client_id: u16,
     id: u16,
@@ -186,12 +221,13 @@ async fn handle_query(
 }
 
 async fn forward(
-    upstream: &crate::config::Upstream,
+    upstream: &Routing,
     query: &mut [u8],
     client_id: u16,
     client_protocol: Protocol,
 ) -> std::io::Result<Vec<u8>> {
-    let mut response = upstream::exchange(upstream, query, client_protocol).await?;
+    let upstreams = upstream.upstreams(query)?;
+    let mut response = upstream_group::exchange(upstreams, query, client_protocol).await?;
     dns::set_id(&mut response, client_id).map_err(wire_error)?;
     dns::set_ra(&mut response).map_err(wire_error)?;
     if matches!(response[3] & 0x0f, 0 | 3) && response[2] & 2 == 0 {
