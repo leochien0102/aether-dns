@@ -7,8 +7,8 @@ fail() {
     exit 1
 }
 
-if [[ $# -ne 1 || ! $1 =~ ^T[0-9]+\.[0-9]+$ ]]; then
-    printf 'usage: bash tests/start-task.sh <card> (e.g. T1.2)\n' >&2
+if [[ $# -ne 1 || ! $1 =~ ^(T[0-9]+\.[0-9]+|M[0-9]+-[0-9]+)$ ]]; then
+    printf 'usage: bash tests/start-task.sh <card> (e.g. T1.2, M2-01)\n' >&2
     exit 2
 fi
 
