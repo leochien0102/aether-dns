@@ -274,8 +274,10 @@ async fn handle_query(
     client_protocol: Protocol,
     peer: SocketAddr,
 ) -> Option<Vec<u8>> {
-    // Both callers have passed check_query. Read the wire qtype before any
-    // list lookup, ID rewrite, upstream exchange or IP test.
+    // Both callers have passed check_query. Clear client TC before filtering,
+    // routing, cache/verdict lookup or upstream exchange, as in check_msg.
+    dns::clear_tc(&mut query).ok()?;
+    // Read the wire qtype before any list lookup, ID rewrite or IP test.
     let qtype_at = dns::skip_name(&query, 12).ok()?;
     let qtype = u16::from_be_bytes([query[qtype_at], query[qtype_at + 1]]);
     if (upstream.config.no_ipv6 > 0 && qtype == 28) || upstream.config.filter_qtype.contains(&qtype)
