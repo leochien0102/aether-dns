@@ -4,6 +4,30 @@ mod server;
 mod upstream;
 
 use std::process::ExitCode;
+use tokio::signal::unix::{SignalKind, signal};
+
+async fn serve(config: config::Config) -> Result<(), Box<dyn std::error::Error>> {
+    // Register both handlers before the server emits its readiness lines.
+    let mut term = signal(SignalKind::terminate())?;
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    let (shutdown, receiver) = tokio::sync::watch::channel(false);
+    let signals = tokio::spawn(async move {
+        tokio::select! {
+            _ = term.recv() => {},
+            _ = interrupt.recv() => {},
+        }
+        shutdown.send_replace(true);
+        tokio::select! {
+            _ = term.recv() => {},
+            _ = interrupt.recv() => {},
+        }
+        // A second TERM or INT skips draining, including runtime teardown.
+        std::process::exit(1);
+    });
+    let result = server::run(config, receiver).await;
+    signals.abort();
+    result
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
@@ -18,7 +42,7 @@ async fn main() -> ExitCode {
         }
         [arg, path] if arg == "-C" => {
             let result = match config::Config::read(std::path::Path::new(path)) {
-                Ok(config) => server::run(config).await,
+                Ok(config) => serve(config).await,
                 Err(error) => Err(error.into()),
             };
             match result {

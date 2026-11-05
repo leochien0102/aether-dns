@@ -3,8 +3,14 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::watch;
+use tokio::task::JoinSet;
+use tokio::time::{Duration, timeout};
 
-pub async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run(
+    config: Config,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<(), Box<dyn std::error::Error>> {
     config.validate_startup()?;
     let upstream = config.trust_dns.first().ok_or("missing trust-dns")?.clone();
     let addresses = if config.bind_addr.is_empty() {
@@ -27,14 +33,23 @@ pub async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             sockets.push(Arc::new(socket));
         }
     }
+    let mut tasks = JoinSet::new();
     for socket in sockets {
         eprintln!("listening UDP {}", socket.local_addr()?);
         let upstream = upstream.clone();
-        tokio::spawn(async move {
+        let mut shutdown = shutdown.clone();
+        tasks.spawn(async move {
+            let mut queries = JoinSet::new();
             let mut buffer = vec![0; 65535];
             let mut next_id = 0u16;
             loop {
-                let (len, peer) = match socket.recv_from(&mut buffer).await {
+                let received = tokio::select! {
+                    biased;
+                    _ = shutdown.changed() => break,
+                    _ = queries.join_next(), if !queries.is_empty() => continue,
+                    received = socket.recv_from(&mut buffer) => received,
+                };
+                let (len, peer) = match received {
                     Ok(value) => value,
                     Err(error) => {
                         eprintln!("UDP receive: {error}");
@@ -53,7 +68,7 @@ pub async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                 let id = next_id;
                 let socket = socket.clone();
                 let upstream = upstream.clone();
-                tokio::spawn(async move {
+                queries.spawn(async move {
                     if let Some(response) =
                         handle_query(&upstream, query, client_id, id, Protocol::Udp, peer).await
                     {
@@ -61,16 +76,26 @@ pub async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 });
             }
+            // Keep the socket only for replies, never receive during draining.
+            while queries.join_next().await.is_some() {}
         });
     }
     // Keep all UDP readiness lines ahead of TCP readiness lines.
     for listener in listeners {
         eprintln!("listening TCP {}", listener.local_addr()?);
         let upstream = upstream.clone();
-        tokio::spawn(async move {
+        let mut shutdown = shutdown.clone();
+        tasks.spawn(async move {
+            let mut queries = JoinSet::new();
             let mut next_id = 0u16;
             loop {
-                let (stream, peer) = match listener.accept().await {
+                let accepted = tokio::select! {
+                    biased;
+                    _ = shutdown.changed() => break,
+                    _ = queries.join_next(), if !queries.is_empty() => continue,
+                    accepted = listener.accept() => accepted,
+                };
+                let (stream, peer) = match accepted {
                     Ok(value) => value,
                     Err(error) => {
                         eprintln!("TCP accept: {error}");
@@ -80,15 +105,25 @@ pub async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                 next_id = next_id.wrapping_add(1);
                 let id = next_id;
                 let upstream = upstream.clone();
-                tokio::spawn(async move {
-                    if let Err(error) = tcp_query(stream, &upstream, id, peer).await {
+                let shutdown = shutdown.clone();
+                queries.spawn(async move {
+                    if let Err(error) = tcp_query(stream, &upstream, id, peer, shutdown).await {
                         eprintln!("TCP client {peer}: {error}");
                     }
                 });
             }
+            drop(listener);
+            while queries.join_next().await.is_some() {}
         });
     }
-    std::future::pending::<()>().await;
+    shutdown.changed().await?;
+    eprintln!("shutdown: draining queries (500 ms maximum)");
+    // One shared budget, not 500 ms per listener or per query. Dropping the
+    // listener JoinSet aborts its query JoinSet as well, discarding late work.
+    let _ = timeout(Duration::from_millis(500), async {
+        while tasks.join_next().await.is_some() {}
+    })
+    .await;
     Ok(())
 }
 
@@ -98,10 +133,20 @@ async fn tcp_query(
     upstream: &crate::config::Upstream,
     mut id: u16,
     peer: SocketAddr,
+    mut shutdown: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
-    let len = stream.read_u16().await? as usize;
-    let mut query = vec![0; len];
-    stream.read_exact(&mut query).await?;
+    // An accepted but idle/partially framed connection is not yet an in-flight
+    // query. Stop reading it on shutdown; only fully received queries may drain.
+    let query = tokio::select! {
+        biased;
+        _ = shutdown.changed() => return Ok(()),
+        query = async {
+            let len = stream.read_u16().await? as usize;
+            let mut query = vec![0; len];
+            stream.read_exact(&mut query).await?;
+            Ok::<_, std::io::Error>(query)
+        } => query?,
+    };
     if dns::check_query(&query).is_err() {
         return Ok(());
     }
