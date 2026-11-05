@@ -17,8 +17,11 @@ use ip_writer::{IpWriter, NftWriter, NoopWriter};
 
 #[path = "cache.rs"]
 pub mod cache;
+#[path = "verdict.rs"]
+pub mod verdict;
 
 struct Routing {
+    verdict: std::sync::Mutex<verdict::VerdictCache>,
     cache: std::sync::Mutex<cache::Cache>,
     clock: Arc<dyn cache::Clock>,
     config: Config,
@@ -126,6 +129,7 @@ pub async fn run_with_cache_clock(
     }
     let upstream = Arc::new(Routing {
         cache: std::sync::Mutex::new(cache::Cache::new(config.cache, config.cache_stale)),
+        verdict: std::sync::Mutex::new(verdict::VerdictCache::new(config.verdict_cache)),
         clock,
         config,
         router,
@@ -330,8 +334,8 @@ async fn forward(
     Ok(response)
 }
 
-// This decision belongs only to the current query, never a cached verdict.
-fn use_china_reply(response: &[u8], ip_test: &dyn IpTest) -> bool {
+// Only a concrete IP decision is reusable; TC/no-IP/other_case are not.
+fn use_china_reply(response: &[u8], routing: &Routing, qname: &[u8]) -> bool {
     // Like dns_test_ip / use_china_reply: non-good replies are other_case.
     if response[2] & 2 != 0 {
         return true;
@@ -339,10 +343,15 @@ fn use_china_reply(response: &[u8], ip_test: &dyn IpTest) -> bool {
     if !matches!(response[3] & 15, 0 | 3) {
         return false;
     }
-    dns::inspect(response)
+    let ip = dns::inspect(response)
         .ok()
-        .and_then(|inspection| inspection.answers.first().copied())
-        .is_some_and(|(ip, _)| ip.is_ipv4() && ip_test.is_china(ip))
+        .and_then(|inspection| inspection.answers.first().copied());
+    let Some((ip, _)) = ip else {
+        return false;
+    };
+    let accepted = ip.is_ipv4() && routing.ip_test.is_china(ip);
+    routing.verdict.lock().unwrap().add(qname, accepted);
+    accepted
 }
 
 async fn none_exchange(
@@ -362,6 +371,18 @@ async fn none_exchange(
             .collect();
         return upstream_group::exchange(&all, query, protocol).await;
     }
+    let qname_end = dns::skip_name(query, 12).map_err(wire_error)?;
+    let qname = &query[12..qname_end];
+    let verdict = routing.verdict.lock().unwrap().get(qname);
+    if let Some(is_china) = verdict {
+        let side = if is_china {
+            &config.china_dns
+        } else {
+            &config.trust_dns
+        };
+        // A cached verdict is authoritative: failure must not query the other side.
+        return upstream_group::exchange(side, query, protocol).await;
+    }
     if config.china_dns.is_empty() {
         return upstream_group::exchange(&config.trust_dns, query, protocol).await;
     }
@@ -373,7 +394,7 @@ async fn none_exchange(
     tokio::pin!(china, trust);
     tokio::select! {
         china_result = &mut china => {
-            if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, &*routing.ip_test)) {
+            if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, routing, qname)) {
                 return china_result;
             }
             // A failed side cannot hide the other side's legal response.
@@ -382,7 +403,7 @@ async fn none_exchange(
         trust_result = &mut trust => {
             // Trust arriving first is held until china decides (or fails).
             let china_result = china.await;
-            if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, &*routing.ip_test)) {
+            if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, routing, qname)) {
                 china_result
             } else {
                 trust_result.or(china_result)
