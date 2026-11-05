@@ -15,7 +15,15 @@ struct Server {
 
 impl Server {
     fn start(upstream: &UdpSocket) -> Self {
-        let reserved = TcpListener::bind("127.0.0.1:0").unwrap();
+        // The server binds both transports; reserve both before spawning and
+        // retry if another process owns the TCP side of the chosen port.
+        let (reserved, udp_reserved) = loop {
+            let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = tcp.local_addr().unwrap();
+            if let Ok(udp) = UdpSocket::bind(endpoint) {
+                break (tcp, udp);
+            }
+        };
         let endpoint = reserved.local_addr().unwrap();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
             "target/tcp-timeout-{}-{}.conf",
@@ -31,7 +39,7 @@ impl Server {
             ),
         )
         .unwrap();
-        drop(reserved);
+        drop((reserved, udp_reserved));
         let mut child = Command::new(env!("CARGO_BIN_EXE_aether-dns"))
             .arg("-C")
             .arg(&path)
