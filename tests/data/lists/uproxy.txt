@@ -1,0 +1,3 @@
+custom.test
+both.test
+long.test

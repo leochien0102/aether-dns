@@ -1,0 +1,7 @@
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bad.test
+a..bad.test
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.a.b.c.d.e.f.g.valid
+left..a.b.c.d.e.f.g.empty
+.boundary.a.b.c.d.e.f.g.test
+left.a.b.c.d.e.f.g.test.
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.limit.test
