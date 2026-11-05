@@ -19,7 +19,7 @@ wt=$wt_root/$card
 
 # Compare the heading's card token literally, not as a regular expression.
 branch=$(awk -v card="$card" '
-    /^## / {
+    /^##+ / {
         if (inside) exit
         inside = ($2 == card)
         next
