@@ -1,0 +1,6 @@
+
+#ignored.test
+.start.test end.test. . #
+first.test	second.test   third.test
+#heading fourth.test
+repeat.test repeat.test

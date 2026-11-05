@@ -1,0 +1,5 @@
+example.com
+shared.test
+specific.long.test
+custom.test
+Case.Example
