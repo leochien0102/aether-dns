@@ -6,6 +6,7 @@ not a general DNS parser or the M0 baseline/parity harness.
 """
 
 import contextlib
+import os
 import queue
 import re
 import signal
@@ -130,6 +131,10 @@ def server(binary, source, upstream_port, directory):
         require(count == 1, "expected one bind-port")
         config, count = re.subn(r"(?m)^(trust-dns tcp://127\.0\.0\.1#)\d+", rf"\g<1>{upstream_port}", config)
         require(count == 1, "first trust must be local TCP")
+        # Transport smoke needs all six queries to reach the fake upstream;
+        # production filtering is covered separately by tests/filters.rs.
+        if os.environ.get("AETHER_FORWARD_STRIP_FILTERS") == "1":
+            config = re.sub(r"(?m)^(?:no-ipv6|filter-qtype)(?:[ \t]+[^\n]*)?$\n?", "", config)
         path = directory / "chinadns.conf"
         path.write_text(config)
         log = directory / f"server-{attempt}.log"

@@ -118,9 +118,10 @@ fn roundtrip(qtype: u16, edns: bool, tcp: bool, flags: u8, rcode: u8) {
         }
     });
     let proto = if tcp { "tcp://" } else { "udp://" };
-    // Second trust and filtering/cache settings must not affect M1 forwarding.
+    // Filtering is covered by tests/filters.rs; this transport matrix uses
+    // an unfiltered configuration. Keep the second trust and cache settings.
     let server = Server::start(&format!(
-        "trust-dns {proto}127.0.0.1#{port},udp://127.0.0.1#1\nno-ipv6\nfilter-qtype 65\ncache 4096\n"
+        "trust-dns {proto}127.0.0.1#{port},udp://127.0.0.1#1\ncache 4096\n"
     ));
     let response = server.query(&original);
     worker.join().unwrap();
