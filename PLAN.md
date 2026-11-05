@@ -161,4 +161,5 @@ M2 验收：M0 `baseline.json` 的 9 场景/29 查询 + 13/13 sanity 对齐；�
 
 **2026-11-05 第一波结果**：M2-01（列表/tag）`e05bf8f`、M2-02（上游组并发）`14298cc`、
 M2-03（nftset netlink）`da4c67d` 全部复审合并；main 94 个测试 FAIL=0、22/22 启动、
-nftset 验收通过。M2-04（按 tag/组路由）已发；`tag:none` 暂保持 M1 的 trust 回退，M2-05 替换。
+nftset 验收通过。M2-04（按 tag/组路由）`5a45c10` 已合并；main 105 个测试 FAIL=0、6/6 forward。
+M2-05（`tag:none` 双查询/IP 测试）已发；verdict/cache 留给 M2-09。
