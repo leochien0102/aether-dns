@@ -205,6 +205,9 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
 14. **影响表必须有 grep 证据**：行为变更卡的影响表不能凭印象写“无过滤/无某指令”。发卡前对
     `tests/` 逐个 grep 相关配置字符串（至少 `no-ipv6`、`filter-qtype`、`default-tag`、
     `add-taggfw-ip`、`group-ipset`、`cache`），把命中文件与处理方式写进卡。
+15. **有状态卡必须核对重复 key**：引入 cache/verdict/连接复用等状态时，必须静态或实际确认
+    既有验收脚本里有没有同名 question 重复发送；不能写“qname 各不相同”。至少检查
+    `fake_upstream.py` 的 qname/qtype/transport 循环和 `tests/*.rs` 的重复 query。
 
 ## 10. 当前卡组
 
