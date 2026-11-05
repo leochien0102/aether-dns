@@ -135,6 +135,10 @@ def server(binary, source, upstream_port, directory):
         # production filtering is covered separately by tests/filters.rs.
         if os.environ.get("AETHER_FORWARD_STRIP_FILTERS") == "1":
             config = re.sub(r"(?m)^(?:no-ipv6|filter-qtype)(?:[ \t]+[^\n]*)?$\n?", "", config)
+        # q1/q2/q3 each repeat over UDP then TCP. Keep this transport smoke
+        # independent of the shared cache; tests/cache.rs covers cache hits.
+        if os.environ.get("AETHER_FORWARD_STRIP_CACHE") == "1":
+            config = re.sub(r"(?m)^(?:cache|cache-stale)(?:[ \t]+[^\n]*)?$\n?", "", config)
         path = directory / "chinadns.conf"
         path.write_text(config)
         log = directory / f"server-{attempt}.log"

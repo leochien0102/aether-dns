@@ -15,7 +15,12 @@ use ip_test::{IpTest, NftIpTest};
 pub mod ip_writer;
 use ip_writer::{IpWriter, NftWriter, NoopWriter};
 
+#[path = "cache.rs"]
+pub mod cache;
+
 struct Routing {
+    cache: std::sync::Mutex<cache::Cache>,
+    clock: Arc<dyn cache::Clock>,
     config: Config,
     router: Router,
     ip_test: Arc<dyn IpTest>,
@@ -75,9 +80,27 @@ pub async fn run_with_ip_test(
 /// Injection point for deterministic best-effort writes without nft tables.
 pub async fn run_with_ip_writer(
     config: Config,
+    shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_cache_clock(
+        config,
+        shutdown,
+        ip_test,
+        ip_writer,
+        Arc::new(cache::MonotonicClock::default()),
+    )
+    .await
+}
+
+/// The production clock is monotonic; tests can advance it without sleeping.
+pub async fn run_with_cache_clock(
+    config: Config,
     mut shutdown: watch::Receiver<bool>,
     ip_test: Arc<dyn IpTest>,
     ip_writer: Arc<dyn IpWriter>,
+    clock: Arc<dyn cache::Clock>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     config.validate_startup()?;
     let router = Router::load(&config);
@@ -102,6 +125,8 @@ pub async fn run_with_ip_writer(
         }
     }
     let upstream = Arc::new(Routing {
+        cache: std::sync::Mutex::new(cache::Cache::new(config.cache, config.cache_stale)),
+        clock,
         config,
         router,
         ip_test,
@@ -276,6 +301,16 @@ async fn forward(
     client_protocol: Protocol,
 ) -> std::io::Result<Vec<u8>> {
     let (tag, qtype) = upstream.route(query)?;
+    let cached = upstream
+        .cache
+        .lock()
+        .unwrap()
+        .get(query, upstream.clock.now());
+    if let Some(mut response) = cached {
+        dns::set_id(&mut response, client_id).map_err(wire_error)?;
+        ip_writer::write_reply(&upstream.config, tag, &response, &*upstream.ip_writer);
+        return Ok(response);
+    }
     let mut response = if tag == RouteTag::None {
         none_exchange(upstream, query, qtype, client_protocol).await?
     } else {
@@ -286,6 +321,11 @@ async fn forward(
     if matches!(response[3] & 0x0f, 0 | 3) && response[2] & 2 == 0 {
         dns::truncate_additional(&mut response).map_err(wire_error)?;
     }
+    upstream
+        .cache
+        .lock()
+        .unwrap()
+        .add(query, &response, upstream.clock.now());
     ip_writer::write_reply(&upstream.config, tag, &response, &*upstream.ip_writer);
     Ok(response)
 }
