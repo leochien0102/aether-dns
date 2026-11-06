@@ -189,8 +189,12 @@ M3 由设计负责人/所有者真机执行，检查表见 [`docs/tasks/m3.md`](
 - M3-02：bypass_cn / gfw / global 模式矩阵 — 已完成（2026-11-06）。
 - M3-03：T1/T2/T3 降级与恢复 — 已完成（T2 约 48s、T3 约 50s、回 T1 11–15s）。
 - M3-04：kill/stop/start/Xray down/回滚演练 — 已完成。
-- M3-05：24–72h 观察 — 进行中。
-- M3-06：M3-REPORT — 待完成。
+- M3-05：真机观察 — 已完成（11.8h、146 样本；所有者批准缩短）。
+- M3-06：M3-REPORT — 完成（[`M3-REPORT.md`](M3-REPORT.md)）。
+
+结果：M3 通过，H28K 保持 aether-dns 2026.11.04；模式/T级/回滚/冷重启均正常，
+观察期无非预期中断。重启期发现三类缺陷（直连泄漏、启动 SERVFAIL、dnsmasq 两次重启），
+均属 aether-proxy 启停编排，已转 M4-04/05/06。
 
 约束：未经授权不得 reboot/poweroff/看门狗复位；模式/T级切换会短暂影响 LAN/DNS。
 已知 M2 cache 无后台 refresh，H28K 已观察 TTL0，记为 M4/P1 输入，不在 M3 改语义。

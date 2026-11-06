@@ -10,10 +10,11 @@
 - [M0-REPORT.md](M0-REPORT.md)：M0 风险 spike 报告（nftset/parser/fixture harness，go/no-go）。
 - [M1-REPORT.md](M1-REPORT.md)：M1 可跑骨架报告（49 测试、22/22 启动、6/6 转发矩阵、已知差距）。
 - [M2-REPORT.md](M2-REPORT.md)：M2 P0 行为报告（210 测试、baseline 29/29、13/13 sanity、已知差距）。
+- [M3-REPORT.md](M3-REPORT.md)：M3 真机集成报告（H28K 11.8h 观察、146 样本、重启期三缺陷转 M4-04/05/06）。
 - [spikes/](spikes/)：M0 最小原型与可复跑证据（非生产代码）。
 - [docs/tasks/](docs/tasks/README.md)：任务卡与执行约定（M1/M2 完成；M3 真机验收进行中）。
-- [M3 真机检查表](docs/tasks/m3.md)：M3-01–04 完成，M3-05 周末观察中；M3-06 报告待写。
-- [M4 候选](docs/tasks/m4.md)：cache refresh、aether- 命名统一、x.y.z 版本；未冻结。
+- [M3 真机检查表](docs/tasks/m3.md)：M3-01–06 全部完成（2026-11-06）。
+- [M4 候选](docs/tasks/m4.md)：cache refresh、aether- 命名、x.y.z 版本、重启期三缺陷；未冻结。
 
 旧项目已停止并归档：
 
@@ -21,6 +22,6 @@
 - 便携包：`../archive/aether-dns-2026-11-04-src.tar.gz`
 - 停止记录：`../archive/aether-dns-2026-11-04/STOP.md`
 
-当前阶段：**M3 真机集成进行中（2026-11-06）**：H28K 已运行 aether-dns 2026.11.04；
-安装/切换/回滚/冷重启/模式矩阵/T1-T2-T3 已完成；进入 24–72h 观察，M3-REPORT 待写。
+当前阶段：**M3 完成（2026-11-06）**：H28K 运行 aether-dns 2026.11.04，安装/切换/回滚/
+冷重启/模式矩阵/T1-T2-T3/故障演练/11.8h 观察全部完成，报告见 [M3-REPORT.md](M3-REPORT.md)。
 M2 已完成（baseline 29/29 + 13/13）；M3 不自动进入 P1。
