@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/dns/mod.rs"]
 mod dns;
+#[path = "common/in_process.rs"]
+mod in_process;
 #[path = "../src/lists.rs"]
 mod lists;
 #[path = "../src/server.rs"]
@@ -19,7 +21,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::mpsc;
-use tokio::time::{Duration, sleep, timeout};
+use tokio::time::{Duration, timeout};
 
 struct NoIpTest;
 impl IpTest for NoIpTest {
@@ -62,52 +64,30 @@ async fn check(tcp: bool, qtype: u16, no_ipv6: bool, filter: bool) {
             }
         }
     });
-    // Reserve a port available for both server transports, without depending on
-    // independent ephemeral TCP/UDP allocations choosing different ports.
-    let (reservation, udp_reservation) = loop {
-        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        if let Ok(udp) = UdpSocket::bind(tcp.local_addr().unwrap()).await {
-            break (tcp, udp);
-        }
-    };
-    let port = reservation.local_addr().unwrap().port();
-    let config = Config {
-        bind_addr: vec![Ipv4Addr::LOCALHOST],
-        bind_port: vec![port],
-        default_tag: Some(Tag::Gfw),
-        trust_dns: vec![Upstream {
-            protocol: None,
-            host: None,
-            ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
-            port: Some(upstream_port),
-        }],
-        no_ipv6: usize::from(no_ipv6),
-        filter_qtype: if filter { vec![qtype] } else { vec![] }
-            .into_iter()
-            .collect(),
-        ..Config::default()
-    };
-    drop((reservation, udp_reservation));
-    let (shutdown, receiver) = tokio::sync::watch::channel(false);
-    let serving = tokio::spawn(async move {
-        server::run_with_ip_test(config, receiver, Arc::new(NoIpTest))
-            .await
-            .map_err(|e| e.to_string())
-    });
-    timeout(Duration::from_secs(2), async {
-        loop {
-            if TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+    let (port, shutdown, serving) = in_process::start(|port, receiver| {
+        let config = Config {
+            bind_addr: vec![Ipv4Addr::LOCALHOST],
+            bind_port: vec![port],
+            default_tag: Some(Tag::Gfw),
+            trust_dns: vec![Upstream {
+                protocol: None,
+                host: None,
+                ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                port: Some(upstream_port),
+            }],
+            no_ipv6: usize::from(no_ipv6),
+            filter_qtype: if filter { vec![qtype] } else { vec![] }
+                .into_iter()
+                .collect(),
+            ..Config::default()
+        };
+        async move {
+            server::run_with_ip_test(config, receiver, Arc::new(NoIpTest))
                 .await
-                .is_ok()
-            {
-                break;
-            }
-            assert!(!serving.is_finished());
-            sleep(Duration::from_millis(5)).await;
+                .map_err(|error| error.to_string())
         }
     })
-    .await
-    .unwrap();
+    .await;
 
     // TC + RD + CD, mixed-case question and OPT: only TC and the existing
     // upstream ID rewrite may change on the forwarded query.

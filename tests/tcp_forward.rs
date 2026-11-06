@@ -1,67 +1,26 @@
-use std::io::{BufRead, BufReader, Read, Write};
+mod common;
+
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::process::{Child, Command, Stdio};
+
 use std::time::{Duration, Instant};
 
 const IO_TIMEOUT: Duration = Duration::from_secs(7);
 
 struct Server {
-    child: Child,
-    path: std::path::PathBuf,
+    _process: common::Server,
     endpoints: Vec<SocketAddr>,
 }
 
 impl Server {
     fn start(upstream: &str) -> Self {
-        let first = TcpListener::bind("127.0.0.1:0").unwrap();
-        let second = TcpListener::bind("127.0.0.1:0").unwrap();
-        let ports = [
-            first.local_addr().unwrap().port(),
-            second.local_addr().unwrap().port(),
-        ];
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("target/tcp-forward-{}.conf", ports[0]));
-        std::fs::write(
-            &path,
-            format!(
-                "bind-addr 127.0.0.1\nbind-addr 127.0.0.2\nbind-port {}\nbind-port {}\ntrust-dns {upstream},udp://127.0.0.1#1\n",
-                ports[0], ports[1]
-            ),
-        )
-        .unwrap();
-        drop((first, second));
-        let child = Command::new(env!("CARGO_BIN_EXE_aether-dns"))
-            .arg("-C")
-            .arg(&path)
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut server = Self {
-            child,
-            path,
-            endpoints: Vec::new(),
-        };
-        let mut stderr = BufReader::new(server.child.stderr.take().unwrap());
-        for protocol in ["UDP", "TCP"] {
-            for _ in 0..4 {
-                let mut line = String::new();
-                stderr.read_line(&mut line).unwrap();
-                let prefix = format!("listening {protocol} ");
-                assert!(line.starts_with(&prefix), "{line}");
-                if protocol == "TCP" {
-                    server
-                        .endpoints
-                        .push(line.trim().strip_prefix(&prefix).unwrap().parse().unwrap());
-                }
-            }
-        }
-        // Drain errors without blocking the child, including the timeout diagnostic.
-        std::thread::spawn(move || {
-            for line in stderr.lines() {
-                eprintln!("{}", line.unwrap());
-            }
+        let process = common::Server::start(&["127.0.0.1", "127.0.0.2"], 2, IO_TIMEOUT, |_| {
+            format!("trust-dns {upstream},udp://127.0.0.1#1\n")
         });
-        server
+        Self {
+            endpoints: process.endpoints.clone(),
+            _process: process,
+        }
     }
 
     fn query(&self, endpoint: SocketAddr, query: &[u8]) -> Vec<u8> {
@@ -77,14 +36,6 @@ impl Server {
         let response = read_frame(&mut stream);
         assert_eq!(stream.read(&mut [0]).unwrap(), 0, "one query then EOF");
         response
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = std::fs::remove_file(&self.path);
     }
 }
 
