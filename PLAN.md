@@ -203,6 +203,7 @@ M3-REPORT 后冻结；现在只记录，不开始实现。详见 [`docs/tasks/m4
 - **M4-02 组件命名统一 aether-**：概览显示 `aether-dns`、`/usr/bin/aether-dns`；
   可回退 `/usr/bin/chinadns-ng`，但日志/事件不出现 `chinadns-ng`；影响 aether-proxy
   const/daemon/log/monitor/LuCI/PO/状态 JSON。
-- **M4-03 版本 x.y.z**：aether-dns 从日期版本改为 x.y.z；是否与 aether-proxy 同号待定；
-  aether-proxy 的版本下限检查必须按引擎区分，不能沿用 chinadns-ng 的 2025.08.09。
+- **M4-03 版本 x.y.z**：aether-dns 从日期版本改为 x.y.z；已确认**独立依赖组件、不与
+  aether-proxy 同号/同步发版**；aether-proxy 的版本下限检查必须按引擎区分，不能沿用
+  chinadns-ng 的 2025.08.09；首个 semver 和从日期版本迁移待 M4 卡定。
 - 待决策：状态 JSON key 迁移、回退路径显示、xray 组件名、版本同号策略。
