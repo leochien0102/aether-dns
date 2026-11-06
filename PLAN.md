@@ -206,4 +206,11 @@ M3-REPORT 后冻结；现在只记录，不开始实现。详见 [`docs/tasks/m4
 - **M4-03 版本 x.y.z**：aether-dns 从日期版本改为 x.y.z；已确认**独立依赖组件、不与
   aether-proxy 同号/同步发版**；aether-proxy 的版本下限检查必须按引擎区分，不能沿用
   chinadns-ng 的 2025.08.09；首个 semver 和从日期版本迁移待 M4 卡定。
-- 待决策：状态 JSON key 迁移、回退路径显示、xray 组件名、版本同号策略。
+- **M4-04 restart 期 DNS 直连泄漏（P0）**：2026-11-06 21:12 受控实测，restart 中约 6 s
+  dnsmasq 回落到 223.5.5.5 直连（随机域名 NXDOMAIN、约 300 ms 可证）；要求 restart
+  保留 DNS handoff，主动 stop 仍按原语义释放。
+- **M4-05 启动期 SERVFAIL 窗口（P1）**：child 先于 Xray DNS inbound 可用，实测 1.8 s
+  内 58 条 SERVFAIL；就绪门只等 TPROXY 31080。要求启动期无“有监听、无上游”。
+- **M4-06 dnsmasq 两次重启（P2）**：stop/start 各重启一次，合计约 8 s 超时；目标 ≤1 次。
+- 待决策：状态 JSON key 迁移、回退路径显示、xray 组件名、版本同号策略、
+  restart/stop 区分方式、bootstrap 解析路径。
