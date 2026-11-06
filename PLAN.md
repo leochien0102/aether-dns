@@ -186,9 +186,9 @@ M3 由设计负责人/所有者真机执行，检查表见 [`docs/tasks/m3.md`](
 不拆执行者 worktree。H28K 当前运行 aether-dns 2026.11.04。
 
 - M3-01：安装、切换、回滚、冷重启 — 已完成（2026-11-06）。
-- M3-02：bypass_cn / gfw / global 模式矩阵 — 待维护窗口。
-- M3-03：T1/T2/T3 降级与恢复 — 待窗口。
-- M3-04：kill/stop/start/Xray down/回滚演练 — 部分完成。
+- M3-02：bypass_cn / gfw / global 模式矩阵 — 已完成（2026-11-06）。
+- M3-03：T1/T2/T3 降级与恢复 — 已完成（T2 约 48s、T3 约 50s、回 T1 11–15s）。
+- M3-04：kill/stop/start/Xray down/回滚演练 — 已完成。
 - M3-05：24–72h 观察 — 进行中。
 - M3-06：M3-REPORT — 待完成。
 
