@@ -86,6 +86,7 @@ bash /workspace/openwrt/aether-dns/tests/start-task.sh <卡号>
   `component_version.uc`、`daemon.uc` 等）可以用 `cat`/`grep`/`git show` 只读；
   不准写入、不准在其目录内运行会写文件的命令。**不需要把文件复制进 worktree。**
 - 不准 `sudo`、安装系统软件包、运行容器，除非任务卡明确允许（M1 卡不允许）。
+- **不准擅自重启真机/路由器**：`reboot`、`poweroff`、固件重启、看门狗复位、断电重启都必须先获得所有者明确授权，并说明维护窗口与回退方式；怀疑启动故障时先停下询问。
 - 不准把 `main` merge/rebase 进本卡分支；冲突留给复审。
 - 不准修改 `docs/`（任务卡/设计文档）——发现矛盾写进报告，由设计负责人改。
 - 不准复制归档项目 `archive/aether-dns-2026-11-04/` 的代码；M0 spike 可参考，但要重写并加测试。
