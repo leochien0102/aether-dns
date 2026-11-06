@@ -194,3 +194,15 @@ M3 由设计负责人/所有者真机执行，检查表见 [`docs/tasks/m3.md`](
 
 约束：未经授权不得 reboot/poweroff/看门狗复位；模式/T级切换会短暂影响 LAN/DNS。
 已知 M2 cache 无后台 refresh，H28K 已观察 TTL0，记为 M4/P1 输入，不在 M3 改语义。
+
+## 15. M4 候选（未冻结，2026-11-06 记）
+
+M3-REPORT 后冻结；现在只记录，不开始实现。详见 [`docs/tasks/m4.md`](docs/tasks/m4.md)。
+
+- **M4-01 cache refresh/stale**：M3 已见 TTL0；第一优先。
+- **M4-02 组件命名统一 aether-**：概览显示 `aether-dns`、`/usr/bin/aether-dns`；
+  可回退 `/usr/bin/chinadns-ng`，但日志/事件不出现 `chinadns-ng`；影响 aether-proxy
+  const/daemon/log/monitor/LuCI/PO/状态 JSON。
+- **M4-03 版本 x.y.z**：aether-dns 从日期版本改为 x.y.z；是否与 aether-proxy 同号待定；
+  aether-proxy 的版本下限检查必须按引擎区分，不能沿用 chinadns-ng 的 2025.08.09。
+- 待决策：状态 JSON key 迁移、回退路径显示、xray 组件名、版本同号策略。

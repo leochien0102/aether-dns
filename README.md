@@ -12,7 +12,8 @@
 - [M2-REPORT.md](M2-REPORT.md)：M2 P0 行为报告（210 测试、baseline 29/29、13/13 sanity、已知差距）。
 - [spikes/](spikes/)：M0 最小原型与可复跑证据（非生产代码）。
 - [docs/tasks/](docs/tasks/README.md)：任务卡与执行约定（M1/M2 完成；M3 真机验收进行中）。
-- [M3 真机检查表](docs/tasks/m3.md)：M3-01 安装/切换/回滚/冷重启已完成，M3-02/03 待窗口。
+- [M3 真机检查表](docs/tasks/m3.md)：M3-01–04 完成，M3-05 周末观察中；M3-06 报告待写。
+- [M4 候选](docs/tasks/m4.md)：cache refresh、aether- 命名统一、x.y.z 版本；未冻结。
 
 旧项目已停止并归档：
 
