@@ -1,46 +1,26 @@
-use std::io::{BufRead, BufReader, Read, Write};
+mod common;
+
+use std::io::{Read, Write};
 use std::net::{TcpListener, UdpSocket};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 struct Server {
-    child: Child,
-    path: std::path::PathBuf,
+    _process: common::Server,
     port: u16,
 }
 impl Server {
     fn start(config: &str) -> Self {
-        // The server binds UDP and TCP on the same port; reserve both and retry
-        // if another process owns the TCP side of the chosen port.
-        let (reservation, tcp_reservation) = loop {
-            let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
-            let port = udp.local_addr().unwrap().port();
-            match TcpListener::bind(("127.0.0.1", port)) {
-                Ok(tcp) => break (udp, tcp),
-                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
-                Err(error) => panic!("TCP bind: {error}"),
-            }
-        };
-        let port = reservation.local_addr().unwrap().port();
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("target/udp-forward-{port}.conf"));
-        std::fs::write(
-            &path,
-            format!("bind-addr 127.0.0.1\nbind-port {port}\n{config}"),
-        )
-        .unwrap();
-        drop((reservation, tcp_reservation));
-        let mut child = Command::new(env!("CARGO_BIN_EXE_aether-dns"))
-            .args(["-C", path.to_str().unwrap()])
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut line = String::new();
-        BufReader::new(child.stderr.as_mut().unwrap())
-            .read_line(&mut line)
-            .unwrap();
-        assert!(line.contains("listening UDP"), "{line}");
-        Self { child, path, port }
+        Self::start_with_ports(config, 1, &["127.0.0.1"])
+    }
+    fn start_with_ports(config: &str, count: usize, addresses: &[&str]) -> Self {
+        let process = common::Server::start(addresses, count, Duration::from_secs(7), |_| {
+            config.to_owned()
+        });
+        Self {
+            port: process.endpoints[0].port(),
+            _process: process,
+        }
     }
     fn query(&self, query: &[u8]) -> Vec<u8> {
         let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -52,13 +32,6 @@ impl Server {
         let len = socket.recv(&mut response).unwrap();
         response.truncate(len);
         response
-    }
-}
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = std::fs::remove_file(&self.path);
     }
 }
 fn query(qtype: u16, edns: bool) -> Vec<u8> {
@@ -214,15 +187,15 @@ fn startup_rejects_invalid_config() {
 
 #[test]
 fn all_bind_addresses_and_ports() {
-    let reservation = UdpSocket::bind("127.0.0.1:0").unwrap();
-    let second = reservation.local_addr().unwrap().port();
-    drop(reservation);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    let server = Server::start(&format!(
-        "bind-addr 127.0.0.2\nbind-port {second}\ntrust-dns tcp://127.0.0.1#{port}\n"
-    ));
+    let server = Server::start_with_ports(
+        &format!("trust-dns tcp://127.0.0.1#{port}\n"),
+        2,
+        &["127.0.0.1", "127.0.0.2"],
+    );
+    let second = server._process.endpoints[1].port();
     for address in ["127.0.0.1", "127.0.0.2"] {
         for port in [server.port, second] {
             let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
