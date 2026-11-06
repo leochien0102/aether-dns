@@ -1,71 +1,28 @@
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+mod common;
+
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 const SECOND: Duration = Duration::from_secs(1);
 
 struct Server {
-    child: Child,
-    path: std::path::PathBuf,
+    process: common::Server,
     endpoint: SocketAddr,
-    logs: Receiver<String>,
 }
 
 impl Server {
     fn start(upstream: &UdpSocket) -> Self {
-        // The server binds both transports; reserve both before spawning and
-        // retry if another process owns the TCP side of the chosen port.
-        let (reserved, udp_reserved) = loop {
-            let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
-            let endpoint = tcp.local_addr().unwrap();
-            if let Ok(udp) = UdpSocket::bind(endpoint) {
-                break (tcp, udp);
-            }
-        };
-        let endpoint = reserved.local_addr().unwrap();
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
-            "target/tcp-timeout-{}-{}.conf",
-            std::process::id(),
-            endpoint.port()
-        ));
-        std::fs::write(
-            &path,
+        let process = common::Server::start(&["127.0.0.1"], 1, SECOND, |_| {
             format!(
-                "bind-addr 127.0.0.1\nbind-port {}\ntrust-dns udp://127.0.0.1#{}\n",
-                endpoint.port(),
+                "trust-dns udp://127.0.0.1#{}\n",
                 upstream.local_addr().unwrap().port()
-            ),
-        )
-        .unwrap();
-        drop((reserved, udp_reserved));
-        let mut child = Command::new(env!("CARGO_BIN_EXE_aether-dns"))
-            .arg("-C")
-            .arg(&path)
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let stderr = child.stderr.take().unwrap();
-        let (sender, logs) = mpsc::channel();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stderr).lines() {
-                if sender.send(line.unwrap()).is_err() {
-                    break;
-                }
-            }
+            )
         });
-        for protocol in ["UDP", "TCP"] {
-            assert_eq!(
-                logs.recv_timeout(SECOND).unwrap(),
-                format!("listening {protocol} {endpoint}")
-            );
-        }
         Self {
-            child,
-            path,
-            endpoint,
-            logs,
+            endpoint: process.endpoints[0],
+            process,
         }
     }
 
@@ -76,14 +33,6 @@ impl Server {
             .unwrap();
         stream.set_write_timeout(Some(SECOND)).unwrap();
         stream
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let _ = std::fs::remove_file(&self.path);
     }
 }
 
@@ -181,7 +130,7 @@ fn idle_timeout_does_not_block_new_connections() {
     );
     timed_eof(&mut idle, start, "no bytes");
     no_upstream(&socket);
-    assert!(server.child.try_wait().unwrap().is_none());
+    assert!(server.process.child.try_wait().unwrap().is_none());
 }
 
 #[test]
@@ -244,13 +193,13 @@ fn shutdown_preempts_timeout_and_keeps_shared_drain_budget() {
         assert!(
             Command::new("kill")
                 .arg(format!("-{signal}"))
-                .arg(server.child.id().to_string())
+                .arg(server.process.child.id().to_string())
                 .status()
                 .unwrap()
                 .success()
         );
         assert_eq!(
-            server.logs.recv_timeout(SECOND).unwrap(),
+            server.process.logs.recv_timeout(SECOND).unwrap(),
             "shutdown: draining queries (500 ms maximum)"
         );
         idle.set_read_timeout(Some(SECOND)).unwrap();
@@ -259,7 +208,7 @@ fn shutdown_preempts_timeout_and_keeps_shared_drain_budget() {
         eof(&mut partial);
         loop {
             assert!(start.elapsed() < SECOND, "frame timeout blocked drain");
-            if let Some(status) = server.child.try_wait().unwrap() {
+            if let Some(status) = server.process.child.try_wait().unwrap() {
                 assert!(status.success());
                 break;
             }

@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/dns/mod.rs"]
 mod dns;
+#[path = "common/in_process.rs"]
+mod in_process;
 #[path = "../src/lists.rs"]
 mod lists;
 #[path = "../src/server.rs"]
@@ -115,11 +117,9 @@ async fn route_case(
             }
         }));
     }
-    let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = reservation.local_addr().unwrap().port();
     let mut config = Config {
         bind_addr: vec![Ipv4Addr::LOCALHOST],
-        bind_port: vec![port],
+        bind_port: vec![],
         china_dns: vec![endpoints[0].clone()],
         trust_dns: vec![endpoints[1].clone(), endpoints[4].clone()],
         gfwlist_file: vec![files.list("gfw", "gfw.example\nshared.example\n")],
@@ -148,27 +148,16 @@ async fn route_case(
         Some(i) => config.groups[i - 2].upstream.clear(),
         None => {}
     }
-    drop(reservation);
-    let (shutdown, receiver) = tokio::sync::watch::channel(false);
-    let serving = tokio::spawn(async move {
-        server::run(config, receiver)
-            .await
-            .map_err(|e| e.to_string())
-    });
-    timeout(Duration::from_secs(2), async {
-        loop {
-            if TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+    let (port, shutdown, serving) = in_process::start(|port, receiver| {
+        let mut config = config.clone();
+        config.bind_port = vec![port];
+        async move {
+            server::run(config, receiver)
                 .await
-                .is_ok()
-            {
-                break;
-            }
-            assert!(!serving.is_finished(), "startup failed");
-            sleep(Duration::from_millis(5)).await;
+                .map_err(|error| error.to_string())
         }
     })
-    .await
-    .unwrap();
+    .await;
     if remove_lists {
         std::fs::remove_dir_all(&files.0).unwrap();
     }
