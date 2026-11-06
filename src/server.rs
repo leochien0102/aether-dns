@@ -24,6 +24,7 @@ struct Routing {
     verdict: std::sync::Mutex<verdict::VerdictCache>,
     cache: std::sync::Mutex<cache::Cache>,
     clock: Arc<dyn cache::Clock>,
+    refresh_tasks: std::sync::Mutex<Option<JoinSet<()>>>,
     config: Config,
     router: Router,
     ip_test: Arc<dyn IpTest>,
@@ -131,6 +132,7 @@ pub async fn run_with_cache_clock(
         cache: std::sync::Mutex::new(cache::Cache::new(config.cache, config.cache_stale)),
         verdict: std::sync::Mutex::new(verdict::VerdictCache::new(config.verdict_cache)),
         clock,
+        refresh_tasks: std::sync::Mutex::new(Some(JoinSet::new())),
         config,
         router,
         ip_test,
@@ -221,6 +223,8 @@ pub async fn run_with_cache_clock(
     }
     // Keep the M1 stderr readiness/shutdown protocol unchanged.
     shutdown.changed().await?;
+    // Drop cancels all refreshes; None also prevents spawning during query drain.
+    upstream.refresh_tasks.lock().unwrap().take();
     eprintln!("shutdown: draining queries (500 ms maximum)");
     // One shared budget, not 500 ms per listener or per query. Dropping the
     // listener JoinSet aborts its query JoinSet as well, discarding late work.
@@ -234,7 +238,7 @@ pub async fn run_with_cache_clock(
 // M1: exactly one framed query and response per client connection.
 async fn tcp_query(
     mut stream: TcpStream,
-    upstream: &Routing,
+    upstream: &Arc<Routing>,
     mut id: u16,
     peer: SocketAddr,
     mut shutdown: watch::Receiver<bool>,
@@ -271,7 +275,7 @@ async fn tcp_query(
 }
 
 async fn handle_query(
-    upstream: &Routing,
+    upstream: &Arc<Routing>,
     mut query: Vec<u8>,
     client_id: u16,
     id: u16,
@@ -305,38 +309,67 @@ async fn handle_query(
 }
 
 async fn forward(
-    upstream: &Routing,
+    upstream: &Arc<Routing>,
     query: &mut [u8],
     client_id: u16,
     client_protocol: Protocol,
 ) -> std::io::Result<Vec<u8>> {
-    let (tag, qtype) = upstream.route(query)?;
-    let cached = upstream
-        .cache
-        .lock()
-        .unwrap()
-        .get(query, upstream.clock.now());
+    let (tag, _) = upstream.route(query)?;
+    let (cached, refresh) = {
+        let mut cache = upstream.cache.lock().unwrap();
+        let now = upstream.clock.now();
+        let cached = cache.get(query, now);
+        let refresh = cached.is_some() && cache.begin_refresh(query, now);
+        (cached, refresh)
+    };
     if let Some(mut response) = cached {
+        if refresh {
+            let routing = upstream.clone();
+            let query = query.to_vec();
+            let mut tasks = upstream.refresh_tasks.lock().unwrap();
+            if let Some(tasks) = tasks.as_mut() {
+                while tasks.try_join_next().is_some() {}
+                tasks.spawn(async move {
+                    let response = exchange_response(&routing, &query, client_protocol).await;
+                    routing.cache.lock().unwrap().finish_refresh(
+                        &query,
+                        response.as_deref().ok(),
+                        routing.clock.now(),
+                    );
+                });
+            }
+        }
         dns::set_id(&mut response, client_id).map_err(wire_error)?;
         ip_writer::write_reply(&upstream.config, tag, &response, &*upstream.ip_writer);
         return Ok(response);
     }
-    let mut response = if tag == RouteTag::None {
-        none_exchange(upstream, query, qtype, client_protocol).await?
-    } else {
-        upstream_group::exchange(upstream.upstreams(tag), query, client_protocol).await?
-    };
+    let mut response = exchange_response(upstream, query, client_protocol).await?;
     dns::set_id(&mut response, client_id).map_err(wire_error)?;
-    dns::set_ra(&mut response).map_err(wire_error)?;
-    if matches!(response[3] & 0x0f, 0 | 3) && response[2] & 2 == 0 {
-        dns::truncate_additional(&mut response).map_err(wire_error)?;
-    }
     upstream
         .cache
         .lock()
         .unwrap()
         .add(query, &response, upstream.clock.now());
     ip_writer::write_reply(&upstream.config, tag, &response, &*upstream.ip_writer);
+    Ok(response)
+}
+
+/// Shared route/exchange and normalization; never consult the answer cache here.
+async fn exchange_response(
+    upstream: &Routing,
+    query: &[u8],
+    client_protocol: Protocol,
+) -> std::io::Result<Vec<u8>> {
+    let (tag, qtype) = upstream.route(query)?;
+    let mut response = if tag == RouteTag::None {
+        none_exchange(upstream, query, qtype, client_protocol).await?
+    } else {
+        upstream_group::exchange(upstream.upstreams(tag), query, client_protocol).await?
+    };
+    dns::set_ra(&mut response).map_err(wire_error)?;
+    if matches!(response[3] & 0x0f, 0 | 3) && response[2] & 2 == 0 {
+        dns::truncate_additional(&mut response).map_err(wire_error)?;
+    }
     Ok(response)
 }
 

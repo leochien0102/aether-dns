@@ -298,6 +298,108 @@ async fn standard(stale: u64) -> Harness {
 }
 const INITIAL: &[u32] = &[10, 30, 50];
 
+fn unit_cache(stale: u64, ttl: u32) -> (server::cache::Cache, FakeClock, Vec<u8>) {
+    let clock = FakeClock::default();
+    let q = query(b'x', 1, 1, 42);
+    let mut r = response(&q, Reply::default());
+    // First RR's TTL determines the entry's refresh threshold.
+    let at = q.len() + 6;
+    r[at..at + 4].copy_from_slice(&ttl.to_be_bytes());
+    dns::truncate_additional(&mut r).unwrap();
+    let mut cache = server::cache::Cache::new(Some(8), Some(stale));
+    assert!(cache.add(&q, &r, clock.now()));
+    (cache, clock, q)
+}
+
+#[test]
+fn refresh_threshold_and_inflight_deduplication() {
+    let (mut cache, clock, q) = unit_cache(5, 12);
+    clock.at(7999);
+    assert!(!cache.begin_refresh(&q, clock.now()));
+    clock.at(8000);
+    assert_eq!(ttls(&cache.get(&q, clock.now()).unwrap()), &[4, 22, 42]);
+    assert!(cache.begin_refresh(&q, clock.now()));
+    assert!(!cache.begin_refresh(&q, clock.now()));
+}
+
+#[test]
+fn short_ttl_only_refreshes_when_stale() {
+    let (mut cache, clock, q) = unit_cache(5, 9);
+    clock.at(8999);
+    assert!(!cache.begin_refresh(&q, clock.now()));
+    clock.at(9000);
+    assert_eq!(ttls(&cache.get(&q, clock.now()).unwrap()), &[0, 0, 0]);
+    assert!(cache.begin_refresh(&q, clock.now()));
+}
+
+#[test]
+fn failed_refresh_retains_entry_and_cools_down_for_five_seconds() {
+    let (mut cache, clock, q) = unit_cache(20, 10);
+    clock.at(10000);
+    assert!(cache.begin_refresh(&q, clock.now()));
+    cache.finish_refresh(&q, None, clock.now());
+    clock.at(14999);
+    assert!(!cache.begin_refresh(&q, clock.now()));
+    assert_eq!(ttls(&cache.get(&q, clock.now()).unwrap()), &[0, 0, 0]);
+    clock.at(15000);
+    assert!(cache.begin_refresh(&q, clock.now()));
+}
+
+#[test]
+fn expired_entries_miss_and_stale_zero_still_allows_refresh_ahead() {
+    for stale in [0, 5] {
+        let (mut cache, clock, q) = unit_cache(stale, 12);
+        clock.at(8000);
+        assert!(cache.begin_refresh(&q, clock.now()));
+        clock.at((12 + stale) * 1000);
+        assert!(cache.get(&q, clock.now()).is_none());
+        assert!(!cache.begin_refresh(&q, clock.now()));
+    }
+}
+
+#[test]
+fn refresh_limit_is_four_and_released_after_failure() {
+    let (mut cache, clock, q) = unit_cache(20, 10);
+    let r = response(&q, Reply::default());
+    let queries: Vec<_> = (b'a'..=b'e').map(|name| query(name, 1, 1, 42)).collect();
+    for q in &queries {
+        assert!(cache.add(q, &r, clock.now()));
+    }
+    clock.at(10000);
+    for q in &queries[..4] {
+        assert!(cache.begin_refresh(q, clock.now()));
+    }
+    assert!(!cache.begin_refresh(&queries[4], clock.now()));
+    cache.finish_refresh(&queries[0], None, clock.now());
+    assert!(cache.begin_refresh(&queries[4], clock.now()));
+}
+
+#[test]
+fn rejected_refresh_replies_never_overwrite_old_entry() {
+    for mode in [
+        Reply {
+            tc: true,
+            ..Reply::default()
+        },
+        Reply {
+            empty: true,
+            ..Reply::default()
+        },
+        Reply {
+            code: 2,
+            ..Reply::default()
+        },
+    ] {
+        let (mut cache, clock, q) = unit_cache(20, 10);
+        clock.at(10000);
+        let before = cache.get(&q, clock.now()).unwrap();
+        assert!(cache.begin_refresh(&q, clock.now()));
+        cache.finish_refresh(&q, Some(&response(&q, mode)), clock.now());
+        assert_eq!(cache.get(&q, clock.now()).unwrap(), before);
+        assert!(!cache.begin_refresh(&q, clock.now()));
+    }
+}
+
 #[tokio::test]
 async fn hit_restores_id_and_normalization() {
     let h = standard(5).await;
@@ -325,20 +427,19 @@ async fn ttl_decreases_from_insertion_not_last_hit() {
     h.ask(&q, false, 1, INITIAL).await;
     h.clock.at(2000);
     h.ask(&q, false, 1, &[8, 28, 48]).await;
-    h.clock.at(9999);
-    h.ask(&q, false, 1, &[1, 21, 41]).await;
+    h.clock.at(6000);
+    h.ask(&q, false, 1, &[4, 24, 44]).await;
     h.stop().await;
 }
-#[tokio::test]
-async fn stale_starts_at_ttl_and_zeros_every_rr() {
-    let h = standard(5).await;
-    let q = query(b'x', 1, 1, 42);
-    h.ask(&q, false, 1, INITIAL).await;
-    h.clock.at(10000);
-    h.ask(&q, false, 1, &[0, 0, 0]).await;
-    h.clock.at(14999);
-    h.ask(&q, false, 1, &[0, 0, 0]).await;
-    h.stop().await;
+#[test]
+fn stale_starts_at_ttl_and_zeros_every_rr() {
+    let (mut cache, clock, q) = unit_cache(5, 10);
+    clock.at(9999);
+    assert_eq!(ttls(&cache.get(&q, clock.now()).unwrap()), &[1, 21, 41]);
+    for millis in [10000, 14999] {
+        clock.at(millis);
+        assert_eq!(ttls(&cache.get(&q, clock.now()).unwrap()), &[0, 0, 0]);
+    }
 }
 #[tokio::test]
 async fn exact_stale_end_is_miss_and_reinsert() {
@@ -356,8 +457,8 @@ async fn stale_zero_expires_at_exact_ttl() {
     let h = standard(0).await;
     let q = query(b'x', 1, 1, 42);
     h.ask(&q, false, 1, INITIAL).await;
-    h.clock.at(9999);
-    h.ask(&q, false, 1, &[1, 21, 41]).await;
+    h.clock.at(6000);
+    h.ask(&q, false, 1, &[4, 24, 44]).await;
     h.clock.at(10000);
     h.ask(&q, false, 2, INITIAL).await;
     h.stop().await;
@@ -482,8 +583,8 @@ async fn cname_minimum_and_aaaa_answers_are_cacheable() {
         let h = Harness::new(Some(2), 5, mode, |_| {}).await;
         let q = query(b'x', 28, 1, 42);
         h.ask(&q, false, 1, INITIAL).await;
-        h.clock.at(10000);
-        h.ask(&q, false, 1, &[0, 0, 0]).await;
+        h.clock.at(2000);
+        h.ask(&q, false, 1, &[8, 28, 48]).await;
         h.stop().await;
     }
 }

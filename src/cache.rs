@@ -1,7 +1,7 @@
 //! In-memory positive-answer cache. Wire bytes are patched, never re-encoded.
 use crate::dns;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     time::{Duration, Instant},
 };
 
@@ -27,6 +27,7 @@ struct Entry {
     ttl: u32,
     offsets: Vec<usize>,
     used: u128,
+    retry_after: Duration,
 }
 
 pub struct Cache {
@@ -35,6 +36,7 @@ pub struct Cache {
     entries: HashMap<Vec<u8>, Entry>,
     lru: BTreeSet<(u128, Vec<u8>)>,
     sequence: u128,
+    refreshing: HashSet<Vec<u8>>,
 }
 
 impl Cache {
@@ -45,6 +47,7 @@ impl Cache {
             entries: HashMap::new(),
             lru: BTreeSet::new(),
             sequence: 0,
+            refreshing: HashSet::new(),
         }
     }
 
@@ -83,27 +86,69 @@ impl Cache {
         Some(response)
     }
 
-    /// Called only after forwarding normalization; retain the original TTLs.
-    pub fn add(&mut self, query: &[u8], response: &[u8], now: Duration) {
-        if self.capacity == 0 {
+    /// Reserve a refresh only on a live hit. Reservation and lookup share a lock.
+    pub fn begin_refresh(&mut self, query: &[u8], now: Duration) -> bool {
+        let Some(key) = question(query) else {
+            return false;
+        };
+        let Some(entry) = self.entries.get(key) else {
+            return false;
+        };
+        let elapsed = now.saturating_sub(entry.written);
+        let ttl = Duration::from_secs(u64::from(entry.ttl));
+        let stale = elapsed >= ttl;
+        let eligible = if stale {
+            self.stale > 0 && elapsed < ttl + Duration::from_secs(self.stale)
+        } else {
+            entry.ttl >= 10 && ttl - elapsed <= ttl / 3
+        };
+        if self.capacity == 0
+            || !eligible
+            || now < entry.retry_after
+            || self.refreshing.len() >= 4
+            || self.refreshing.contains(key)
+        {
+            return false;
+        }
+        self.refreshing.insert(key.to_vec());
+        true
+    }
+
+    pub fn finish_refresh(&mut self, query: &[u8], response: Option<&[u8]>, now: Duration) {
+        let Some(key) = question(query) else { return };
+        if !self.refreshing.remove(key) {
             return;
         }
-        let Some(key) = question(query) else { return };
+        let accepted = response.is_some_and(|response| self.add(query, response, now));
+        if !accepted && let Some(entry) = self.entries.get_mut(key) {
+            entry.retry_after = now + Duration::from_secs(5);
+        }
+    }
+
+    /// Called only after forwarding normalization; retain the original TTLs.
+    /// Return whether the response passed the existing cache admission checks.
+    pub fn add(&mut self, query: &[u8], response: &[u8], now: Duration) -> bool {
+        if self.capacity == 0 {
+            return false;
+        }
+        let Some(key) = question(query) else {
+            return false;
+        };
         let Ok(inspection) = dns::inspect(response) else {
-            return;
+            return false;
         };
         if inspection.truncated
             || !matches!(response[3] & 15, 0 | 3)
             || inspection.answers.is_empty()
         {
-            return;
+            return false;
         }
         let Some((ttl, offsets)) = ttl_fields(response) else {
-            return;
+            return false;
         };
         let mut response = response.to_vec();
         if dns::set_id(&mut response, 0).is_err() {
-            return;
+            return false;
         }
         self.remove(key);
         if self.entries.len() as u64 >= self.capacity
@@ -121,8 +166,10 @@ impl Cache {
                 ttl,
                 offsets,
                 used: self.sequence,
+                retry_after: Duration::ZERO,
             },
         );
+        true
     }
 
     fn remove(&mut self, key: &[u8]) {
