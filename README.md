@@ -11,7 +11,8 @@
 - [M1-REPORT.md](M1-REPORT.md)：M1 可跑骨架报告（49 测试、22/22 启动、6/6 转发矩阵、已知差距）。
 - [M2-REPORT.md](M2-REPORT.md)：M2 P0 行为报告（210 测试、baseline 29/29、13/13 sanity、已知差距）。
 - [spikes/](spikes/)：M0 最小原型与可复跑证据（非生产代码）。
-- [docs/tasks/](docs/tasks/README.md)：任务卡与执行约定（M1 全部完成；M2 第一波进行中）。
+- [docs/tasks/](docs/tasks/README.md)：任务卡与执行约定（M1/M2 完成；M3 真机验收进行中）。
+- [M3 真机检查表](docs/tasks/m3.md)：M3-01 安装/切换/回滚/冷重启已完成，M3-02/03 待窗口。
 
 旧项目已停止并归档：
 
@@ -19,6 +20,6 @@
 - 便携包：`../archive/aether-dns-2026-11-04-src.tar.gz`
 - 停止记录：`../archive/aether-dns-2026-11-04/STOP.md`
 
-当前阶段：**M2 完成（2026-11-05）**：12/12 卡合并；210 测试、22/22 启动、6/6 转发、
-baseline 29/29 + 13/13 sanity、diff=0。**M2 结束即停**，等所有者确认后再进 M3/P1。
-M2 只覆盖 M0 固定 9/29，不是全量 chinadns-ng parity。
+当前阶段：**M3 真机集成进行中（2026-11-06）**：H28K 已运行 aether-dns 2026.11.04，
+切换/回滚/冷重启已通过；M3-02 模式矩阵、M3-03 T1/T2/T3 待维护窗口。
+M2 已完成（baseline 29/29 + 13/13）；M3 不自动进入 P1。

@@ -179,3 +179,18 @@ M2 的 12 张卡（M2-01–M2-12）全部复审合并；代码合并最后 `c5c7
 - 已知差距：M2-05 单侧失败回退不是 parity；M2-08 仅正向 A/AAAA；IPv4 set；verdict key/淘汰；
   response question 非 parity；无 TLS/DoT；baseline 只覆盖固定 9/29。见 M2-REPORT §5。
 - **M2 完成即停；等所有者确认 M3 范围后再拆卡，不自动开工。**
+
+## 14. M3 真机集成（2026-11-06 开）
+
+M3 由设计负责人/所有者真机执行，检查表见 [`docs/tasks/m3.md`](docs/tasks/m3.md)；
+不拆执行者 worktree。H28K 当前运行 aether-dns 2026.11.04。
+
+- M3-01：安装、切换、回滚、冷重启 — 已完成（2026-11-06）。
+- M3-02：bypass_cn / gfw / global 模式矩阵 — 待维护窗口。
+- M3-03：T1/T2/T3 降级与恢复 — 待窗口。
+- M3-04：kill/stop/start/Xray down/回滚演练 — 部分完成。
+- M3-05：24–72h 观察 — 进行中。
+- M3-06：M3-REPORT — 待完成。
+
+约束：未经授权不得 reboot/poweroff/看门狗复位；模式/T级切换会短暂影响 LAN/DNS。
+已知 M2 cache 无后台 refresh，H28K 已观察 TTL0，记为 M4/P1 输入，不在 M3 改语义。
