@@ -201,10 +201,10 @@ M3 由设计负责人/所有者真机执行，检查表见 [`docs/tasks/m3.md`](
 
 ## 15. M4 进展（2026-11-07 更新）
 
-M4-01、M4-07 已复审合并；其余仍为候选。详见 [`docs/tasks/m4.md`](docs/tasks/m4.md)。
+M4-01/07已完成，M4-04（aether-proxy T15.1）已验收合并；M4-05先执行S15.2设计探针，其余候选待冻结。验收见 [`M4-VALIDATION-2026-11-07.md`](M4-VALIDATION-2026-11-07.md)，任务详见 [`docs/tasks/m4.md`](docs/tasks/m4.md)。
 构建与安装记录见 [`M4-DEPLOYMENT-2026-11-07.md`](M4-DEPLOYMENT-2026-11-07.md)。
 
-- **M4-01 cache refresh/stale**：实现 `ec69b4e`，已合并并安装 H28K 包 `2026.11.04-1`；基本状态正常，完整真机复验留给所有者。
+- **M4-01 cache refresh/stale**：实现 `ec69b4e`，已合并安装；真机61次查询TTL0=1.64%，1800次持续查询全部NOERROR，上游尝试量保守上界0.333/s，本轮指标通过。
 - **M4-07 测试端口竞争**：实现 `0b5b52a`，复审合并通过；最终组合门禁 224 项通过、FAIL=0。
 - **M4-02 组件命名统一 aether-**：概览显示 `aether-dns`、`/usr/bin/aether-dns`；
   可回退 `/usr/bin/chinadns-ng`，但日志/事件不出现 `chinadns-ng`；影响 aether-proxy
@@ -214,7 +214,7 @@ M4-01、M4-07 已复审合并；其余仍为候选。详见 [`docs/tasks/m4.md`]
   chinadns-ng 的 2025.08.09；首个 semver 和从日期版本迁移待 M4 卡定。
 - **M4-04 restart 期 DNS 直连泄漏（P0）**：2026-11-06 21:12 受控实测，restart 中约 6 s
   dnsmasq 回落到 223.5.5.5 直连（随机域名 NXDOMAIN、约 300 ms 可证）；要求 restart
-  保留 DNS handoff，主动 stop 仍按原语义释放。
+  保留 DNS handoff，主动 stop 仍按原语义释放。已由T15.1实现，真机计数/阳性对照通过，合并为`0e0aac4`。
 - **M4-05 启动期 SERVFAIL 窗口（P1）**：child 先于 Xray DNS inbound 可用，实测 1.8 s
   内 58 条 SERVFAIL；就绪门只等 TPROXY 31080。要求启动期无“有监听、无上游”。
 - **M4-06 dnsmasq 两次重启（P2）**：stop/start 各重启一次，合计约 8 s 超时；目标 ≤1 次。
