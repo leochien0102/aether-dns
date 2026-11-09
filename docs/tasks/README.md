@@ -1,5 +1,7 @@
 # aether-dns 任务卡：执行约定
 
+> **当前交接（2026-11-09）**：先读[独立状态与边界](../handoffs/session-handoff-20261109.md)。M0–M3及已批准M4引擎切片已交付，当前没有默认新实现卡；下方M1 APPROVED、先派T1.0/T1.1及示例入口是历史阶段，不重做。角色/worktree/质量门规则仍有效，具体新目标由用户确认。
+
 > **项目与范围**：本文件的任务卡全部属于 **aether-dns** 仓库（`/workspace/openwrt/aether-dns`）。
 > 执行时只在本卡分支/工作树中读写；**不准修改 aether-proxy 主检出、`archive/`、`openwrt-actions/`
 > 或 `/workspace/openwrt` 下的任何其他仓库**（含其构建目录）。任务卡要求「参考」其他仓库时，
