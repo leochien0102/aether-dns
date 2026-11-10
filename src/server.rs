@@ -299,7 +299,7 @@ async fn handle_query(
     match forward(upstream, &mut query, client_id, client_protocol).await {
         Ok(response) => Some(response),
         Err(error) => {
-            eprintln!("upstream {peer}: {error}");
+            eprintln!("upstream failed for client {peer}: {error}");
             let mut response = original;
             dns::synthetic_nodata(&mut response).ok()?;
             response[3] = (response[3] & 0xf0) | 2;

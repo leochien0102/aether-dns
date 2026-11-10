@@ -22,23 +22,48 @@ pub async fn exchange(
     }
     let mut pending: Vec<_> = upstreams
         .iter()
-        .map(|server| Box::pin(upstream::exchange(server, query, client_protocol.clone())))
+        .enumerate()
+        .map(|(index, server)| {
+            (
+                index,
+                Box::pin(upstream::exchange(server, query, client_protocol.clone())),
+            )
+        })
         .collect();
-    let mut last_error = None;
+    let mut errors: Vec<_> = upstreams.iter().map(|_| None).collect();
+    let mut last_error_kind = None;
     poll_fn(|cx| {
         let mut index = 0;
         while index < pending.len() {
-            match pending[index].as_mut().poll(cx) {
+            match pending[index].1.as_mut().poll(cx) {
                 Poll::Ready(Ok(response)) => return Poll::Ready(Ok(response)),
                 Poll::Ready(Err(error)) => {
-                    last_error = Some(error);
+                    last_error_kind = Some(error.kind());
+                    errors[pending[index].0] = Some(error);
                     drop(pending.swap_remove(index));
                 }
                 Poll::Pending => index += 1,
             }
         }
         if pending.is_empty() {
-            Poll::Ready(Err(last_error.take().expect("nonempty group completed")))
+            let failures: Vec<_> = upstreams
+                .iter()
+                .zip(&errors)
+                .map(|(server, error)| {
+                    let protocol = match server.protocol.as_ref().unwrap_or(&client_protocol) {
+                        Protocol::Tcp => "tcp",
+                        Protocol::Udp => "udp",
+                        Protocol::Tls => "tls",
+                    };
+                    let address = std::net::SocketAddr::new(server.ip, server.port.unwrap_or(53));
+                    let error = error.as_ref().expect("all upstreams failed");
+                    format!("{protocol}://{address}: {error}")
+                })
+                .collect();
+            Poll::Ready(Err(io::Error::new(
+                last_error_kind.expect("nonempty group completed"),
+                format!("no upstream answered: {}", failures.join("; ")),
+            )))
         } else {
             Poll::Pending
         }
