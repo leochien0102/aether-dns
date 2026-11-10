@@ -91,6 +91,16 @@
 - 测试/回滚：用同一 harness 把 SUT 从 chinadns-ng 换成 aether-dns，逐字段 diff。
 - 决策：pending（M1 前批准）。
 
+### IMP-007 上游失败日志指认真实上游（approved 2026-11-10）
+
+- 问题/机会：失败日志把客户端地址标成 upstream 且只剩 last error，导致跨项目误判（2026-11-10 10:40 的 H28K 事件）。
+- 证据：`src/server.rs:302`（`peer` 是客户端）、`src/upstream_group.rs:34,41`（`last_error` 覆盖）；proxy 侧 `docs/09` 的读法补充。
+- 变更：组层聚合 `(上游, 原因)`，服务端标签改为 `upstream failed for client …`。
+- parity 影响：`compatible`（只改 stderr 文本，不改解析/路由/缓存/应答语义）。
+- 成本/风险：低；`ErrorKind` 保持最后一个错误，避免动既有测试语义。
+- 测试/回滚：`tests/upstream_group.rs` 新用例 + `tests/upstream_log.rs`；回滚即还原两处文本。
+- 决策：approved（所有者 2026-11-10）。
+
 ## 明确不登记为“缺陷”的事项
 
 - **helloworld 不再必选 chinadns-ng**：抓到的证据是 SSR+ 把它作为**可选** include，并提供 mosdns/dnsproxy/dns2socks 等替代；**没有证据**表明是 chinadns-ng 的技术缺陷。具体原因需查 issue/提交；不要据此提出“修复”。
