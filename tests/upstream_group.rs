@@ -267,3 +267,48 @@ case!(
     Some(1)
 );
 case!(empty_group_is_error, Udp, vec![], None);
+
+#[tokio::test(flavor = "current_thread")]
+async fn failure_names_every_upstream() {
+    let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let closed_addr = closed.local_addr().unwrap();
+    let silent = peer(0, None, &Tcp, Silent, Arc::new(Barrier::new(1))).await;
+    let silent_addr = format!("127.0.0.1:{}", silent.upstream.port.unwrap());
+    let refused = Upstream {
+        protocol: Some(Tcp),
+        host: None,
+        ip: closed_addr.ip(),
+        port: Some(closed_addr.port()),
+    };
+    drop(closed);
+    // Silent is configured first but finishes last: output must not follow completion order.
+    let error = timeout(
+        Duration::from_secs(7),
+        upstream_group::exchange(&[silent.upstream, refused], QUERY, Tcp),
+    )
+    .await
+    .expect("single-attempt deadline")
+    .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+    let message = error.to_string();
+    assert!(message.starts_with("no upstream answered: "), "{message}");
+    let silent_at = message
+        .find(&format!("tcp://{silent_addr}: upstream timeout after 5 s"))
+        .expect("implicit protocol and silent upstream timeout must be named");
+    let refused_at = message
+        .find(&format!("; tcp://{closed_addr}: "))
+        .expect("explicit protocol and refused upstream must be named");
+    assert!(silent_at < refused_at, "configuration order: {message}");
+    assert!(
+        message[refused_at..]
+            .to_ascii_lowercase()
+            .contains("refused"),
+        "refusal reason: {message}"
+    );
+    assert!(
+        !timeout(Duration::from_secs(1), silent.worker)
+            .await
+            .expect("silent connection cancelled")
+            .unwrap()
+    );
+}
