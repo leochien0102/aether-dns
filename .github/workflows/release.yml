@@ -37,20 +37,15 @@ jobs:
           else
             [[ "$REF" =~ ^refs/tags/v[0-9][0-9A-Za-z._+-]*$ ]] || exit 1
           fi
-      - name: Install native musl tools and emulator
+      - name: Install native musl tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools qemu-user-static
+          sudo apt-get install -y musl-tools
       - name: Install aarch64 musl toolchain
         if: matrix.arch == 'aarch64_generic'
         uses: taiki-e/setup-cross-toolchain-action@84e58a47fc2bcd3821a2aa8c153595bbffb0e10f # v1.32.1
         with:
           target: aarch64-unknown-linux-musl
-      - name: Enable aarch64 emulation
-        if: matrix.arch == 'aarch64_generic'
-        uses: docker/setup-qemu-action@v3.6.0
-        with:
-          platforms: arm64
       - name: Build static binary
         env:
           TARGET: ${{ matrix.target }}
@@ -67,7 +62,7 @@ jobs:
           readelf -d binary/aether-dns | tee binary-dynamic.txt
           ! grep -q NEEDED binary-dynamic.txt
           if [[ "$TARGET" == aarch64-* ]]; then
-            version=$(qemu-aarch64-static binary/aether-dns -V)
+            version=$(qemu-aarch64 binary/aether-dns -V)
           else
             version=$(binary/aether-dns -V)
           fi
