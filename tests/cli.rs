@@ -12,7 +12,7 @@ fn parse_version(text: &str) -> Option<&str> {
     text.lines().next()?.split_whitespace().nth(1)
 }
 
-// Dotted-numeric subset of the proxy's version comparison, sufficient for D4's date version.
+// Dotted-numeric subset of the proxy's version comparison for the engine minimum.
 fn date_version(version: &str) -> Option<Vec<u32>> {
     let parts: Vec<_> = version.split('.').collect();
     if parts.len() < 2
@@ -31,10 +31,19 @@ fn cli_version_passes_proxy_minimum() {
         let output = run(arg);
         assert!(output.status.success());
         let banner = std::str::from_utf8(&output.stdout).unwrap();
-        assert_eq!(banner.lines().next(), Some("aether-dns 2026.11.04"));
         let version = parse_version(banner).unwrap();
-        assert!(date_version(version).unwrap() >= date_version("2025.08.09").unwrap());
-        println!("{arg}: {version} >= 2025.08.09");
+        assert_eq!(
+            version,
+            env!("CARGO_PKG_VERSION"),
+            "banner matches crate version"
+        );
+        assert_eq!(version, "1.0.0", "migration target is 1.0.0");
+        assert_eq!(
+            banner.lines().next(),
+            Some(concat!("aether-dns ", env!("CARGO_PKG_VERSION")))
+        );
+        assert!(date_version(version).unwrap() >= date_version("1.0.0").unwrap());
+        println!("{arg}: {version} >= 1.0.0");
     }
 }
 
