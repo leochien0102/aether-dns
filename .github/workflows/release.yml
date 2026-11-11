@@ -142,34 +142,6 @@ jobs:
           [[ ${#files[@]} == 1 ]] || exit 1
           mkdir -p assets
           cp "${files[0]}" "assets/$name"
-      # apk is an apk-tools v3 ADB container, not a tar stream: only the SDK's own
-      # apk tool can install it. Verify provides, the binary and static linkage here.
-      - name: Verify apk metadata and payload
-        if: matrix.ext == 'apk'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static
-          pkg=$(ls assets/*.apk)
-          root=$(mktemp -d)
-          ./staging_dir/host/bin/apk add --usermode --root "$root" --initdb \
-            --allow-untrusted --no-network --force-non-repository --no-scripts "$pkg"
-          ./staging_dir/host/bin/apk info --root "$root" -a aether-dns | tee apk-info.txt
-          grep -q 'dns-engine' apk-info.txt
-          binary="$root/usr/bin/aether-dns"
-          test -x "$binary"
-          file "$binary" | tee apk-file.txt
-          grep -F 'statically linked' apk-file.txt
-          readelf -d "$binary" | tee apk-dynamic.txt
-          ! grep -q NEEDED apk-dynamic.txt
-          if [[ "${{ matrix.package_arch }}" == aarch64_generic ]]; then
-            version=$(qemu-aarch64-static "$binary" -V)
-          else
-            version=$("$binary" -V)
-          fi
-          echo "$version"
-          [[ "$version" == 'aether-dns 1.0.0' ]]
-
       - uses: actions/upload-artifact@v4.6.2
         with:
           name: package-${{ matrix.sdk }}-${{ matrix.package_arch }}
@@ -192,6 +164,48 @@ jobs:
           set -euo pipefail
           (cd assets && sha256sum aether-dns_*.ipk aether-dns-*.apk > SHA256SUMS)
           sh tests/ci/verify-assets.sh assets
+      - name: Install a matching apk tool
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zstd
+          url=https://downloads.openwrt.org/releases/25.12.5/targets/x86/64/openwrt-sdk-25.12.5-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+          curl -fsSL -o sdk.tar.zst "$url"
+          tar --zstd -xf sdk.tar.zst
+          tool=$(find . -path '*staging_dir/host/bin/apk' -type f | head -1)
+          test -n "$tool"
+          echo "APK_TOOL=$PWD/${tool#./}" >> "$GITHUB_ENV"
+          "$APK_TOOL" --version
+
+      # apk is an apk-tools v3 ADB container, not a tar stream: install it with the
+      # SDK's own apk tool (architecture override works on the host).
+      - name: Check apk payloads (metadata, version and static linkage)
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y qemu-user-static
+          for asset in assets/*.apk; do
+            if [[ "$asset" == *aarch64_generic* ]]; then arch=aarch64_generic; else arch=x86_64; fi
+            root=$(mktemp -d)
+            "$APK_TOOL" --arch "$arch" add --usermode --root "$root" --initdb \
+              --allow-untrusted --no-network --force-non-repository --no-scripts "$asset"
+            "$APK_TOOL" info --root "$root" -a aether-dns | tee apk-info.txt
+            grep -q 'dns-engine' apk-info.txt
+            binary="$root/usr/bin/aether-dns"
+            echo "=== $asset ==="
+            test -x "$binary"
+            file "$binary" | tee apk-file.txt
+            grep -F 'statically linked' apk-file.txt
+            readelf -d "$binary" | tee apk-dynamic.txt
+            ! grep -q NEEDED apk-dynamic.txt
+            if [[ "$arch" == aarch64_generic ]]; then
+              version=$(qemu-aarch64-static "$binary" -V)
+            else
+              version=$("$binary" -V)
+            fi
+            echo "$version"
+            [[ "$version" == 'aether-dns 1.0.0' ]]
+          done
+
       - name: Check ipk payloads (versions and static linkage)
         run: |
           set -euo pipefail
