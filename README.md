@@ -25,6 +25,6 @@
 - 便携包：`../archive/aether-dns-2026-11-04-src.tar.gz`
 - 停止记录：`../archive/aether-dns-2026-11-04/STOP.md`
 
-当前交接状态（2026-11-09）：**已批准的本体切片已交付，下一目标待用户确认**。M4-07测试修复、M4-01缓存刷新已合并并验收；H28K最后已验包为`2026.11.04-1`。当前main相对该已装构建提交没有生产代码变化，无需为proxy正式r7重建DNS。
-启动期解环、owned readiness、handoff及init契约已由aether-proxy后续T15系列交付并发布r7，不重做S15.2探针；命名、独立semver、中断体验和其他parity仍按候选分别决策。Cargo版本、二进制日期版本和opkg版本不能混为同号发行，详见[独立交接](docs/handoffs/session-handoff-20261109.md)。
+当前状态（M4-03）：**仓库版本已迁到 `1.0.0`**，Cargo 版本与二进制 `-V` 第二字段一致；尚未打包、未部署。M4-07测试修复、M4-01缓存刷新已合并并验收；H28K最后已验包仍为`2026.11.04-1`，设备未变。
+启动期解环、owned readiness、handoff及init契约已由aether-proxy后续T15系列交付并发布r7，不重做S15.2探针；命名、中断体验和其他parity仍按候选分别决策。独立semver已在DNS仓库落地；打包及proxy按引擎版本闸门另卡处理，闸门拆分前不得部署 `1.0.0`。Cargo版本、二进制版本和设备opkg版本不能混为同号发行，详见[独立交接](docs/handoffs/session-handoff-20261109.md)。
 M3 的安装/切换/回滚/模式/T级/短时观察结果见 [M3-REPORT.md](M3-REPORT.md)。

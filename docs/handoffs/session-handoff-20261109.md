@@ -12,8 +12,8 @@
 | 实际设备构建源码 | `325b614a7bb927cc94dc6d7b38751010e9be8531`，M4-01接受合并 |
 | B3固定真实引擎测试源码 | `a3d42a278ce84ba5ed54988a9d30a695b7ec97b5`，其自身为后续设计文档提交 |
 | 当前生产代码差异 | main与上述两个基准的src/Cargo.toml/Cargo.lock均无diff；**无需为本轮proxy r7重建DNS** |
-| Cargo package.version | **0.1.0**，仅当前crate字段，不等于已完成产品semver迁移 |
-| 二进制-V第二字段 | **2026.11.04** |
+| Cargo package.version | **1.0.0**，M4-03 已完成仓库侧 semver 迁移，尚未打包/部署 |
+| 二进制-V第二字段 | **1.0.0**，由 Cargo 包版本派生（仓库构建，非设备已装版本） |
 | H28K本地opkg包 | **2026.11.04-1**，尚不是独立semver正式发行 |
 
 本文件及入口更新是新增的**本地文档提交，未推送、不构建、不测试**；当前无remote的事实不因此改变。不要从目录名、Cargo版本或proxy tag猜测DNS发行状态。

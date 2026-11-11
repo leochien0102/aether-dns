@@ -39,7 +39,7 @@ async fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         [arg] if arg == "-V" || arg == "--version" => {
-            println!("aether-dns 2026.11.04");
+            println!("aether-dns {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         [arg, path] if arg == "-C" => {
