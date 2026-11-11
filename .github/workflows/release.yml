@@ -106,11 +106,19 @@ jobs:
           path: openwrt/files
       - name: Prepare prebuilt input
         run: chmod +x openwrt/files/aether-dns
+      # The SDK feed layout requires <feed>/<PKG_NAME>/Makefile: our package lives in
+      # openwrt/, so expose it under the package name instead of renaming the repo dir.
+      - name: Stage feed directory
+        run: |
+          set -euo pipefail
+          mkdir -p feed
+          ln -s "$GITHUB_WORKSPACE/openwrt" feed/aether-dns
       - name: Package (no Rust compilation in SDK)
         uses: openwrt/gh-action-sdk@7fc2640243284ecc44f4a9c3f749a61746ee02cb # v11
         env:
           ARCH: ${{ matrix.arch }}
           FEEDNAME: aetherdns
+          FEED_DIR: ${{ github.workspace }}/feed
           PACKAGES: aether-dns
       - name: Normalize asset name
         env:
