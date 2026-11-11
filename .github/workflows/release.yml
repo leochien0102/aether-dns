@@ -1,0 +1,233 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  binaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+          - arch: aarch64_generic
+            target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Validate invocation
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == workflow_dispatch ]]; then
+            [[ "$REF" == refs/heads/* ]] || exit 1
+          else
+            [[ "$REF" =~ ^refs/tags/v[0-9][0-9A-Za-z._+-]*$ ]] || exit 1
+          fi
+      - name: Install native musl tools and emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools qemu-user-static
+      - name: Install aarch64 musl toolchain
+        if: matrix.arch == 'aarch64_generic'
+        uses: taiki-e/setup-cross-toolchain-action@84e58a47fc2bcd3821a2aa8c153595bbffb0e10f # v1.32.1
+        with:
+          target: aarch64-unknown-linux-musl
+      - name: Enable aarch64 emulation
+        if: matrix.arch == 'aarch64_generic'
+        uses: docker/setup-qemu-action@v3.6.0
+        with:
+          platforms: arm64
+      - name: Build static binary
+        env:
+          TARGET: ${{ matrix.target }}
+          RUSTFLAGS: -C target-feature=+crt-static -C relocation-model=static
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          set -euo pipefail
+          rustup target add "$TARGET"
+          cargo build --release --locked --target "$TARGET"
+          mkdir -p binary
+          cp "target/$TARGET/release/aether-dns" binary/aether-dns
+          file binary/aether-dns | tee binary-file.txt
+          grep -F 'statically linked' binary-file.txt
+          readelf -d binary/aether-dns | tee binary-dynamic.txt
+          ! grep -q NEEDED binary-dynamic.txt
+          if [[ "$TARGET" == aarch64-* ]]; then
+            version=$(qemu-aarch64-static binary/aether-dns -V)
+          else
+            version=$(binary/aether-dns -V)
+          fi
+          echo "$version"
+          [[ "$version" == 'aether-dns 1.0.0' ]]
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: binary-${{ matrix.arch }}
+          path: binary/aether-dns
+          if-no-files-found: error
+
+  packages:
+    needs: binaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: 24.10.8
+            arch: x86_64-24.10.8
+            package_arch: x86_64
+            ext: ipk
+          - sdk: 24.10.8
+            arch: armsr-armv8-24.10.8
+            package_arch: aarch64_generic
+            ext: ipk
+          - sdk: 25.12.5
+            arch: x86_64-25.12.5
+            package_arch: x86_64
+            ext: apk
+          - sdk: 25.12.5
+            arch: armsr-armv8-25.12.5
+            package_arch: aarch64_generic
+            ext: apk
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: binary-${{ matrix.package_arch }}
+          path: openwrt/files
+      - name: Prepare prebuilt input
+        run: chmod +x openwrt/files/aether-dns
+      - name: Package (no Rust compilation in SDK)
+        uses: openwrt/gh-action-sdk@7fc2640243284ecc44f4a9c3f749a61746ee02cb # v11
+        env:
+          ARCH: ${{ matrix.arch }}
+          FEEDNAME: aetherdns
+          PACKAGES: aether-dns
+      - name: Normalize asset name
+        env:
+          ARCH: ${{ matrix.package_arch }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [[ "$EXT" == ipk ]]; then
+            files=(bin/packages/"$ARCH"/aetherdns/aether-dns_*.ipk)
+            name="aether-dns_1.0.0-r1_$ARCH.ipk"
+          else
+            files=(bin/packages/"$ARCH"/aetherdns/aether-dns-*.apk)
+            name="aether-dns-1.0.0-r1_$ARCH.apk"
+          fi
+          [[ ${#files[@]} == 1 ]] || exit 1
+          mkdir -p assets
+          cp "${files[0]}" "assets/$name"
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: package-${{ matrix.sdk }}-${{ matrix.package_arch }}
+          path: assets/*
+          if-no-files-found: error
+
+  verify:
+    needs: packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: assets
+      - name: Generate and verify checksum manifest and metadata
+        run: |
+          set -euo pipefail
+          (cd assets && sha256sum aether-dns_*.ipk aether-dns-*.apk > SHA256SUMS)
+          sh tests/ci/verify-assets.sh assets
+      - name: Check packaged binaries (four versions and static linkage)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+          for asset in assets/*.ipk assets/*.apk; do
+            rm -rf unpack
+            mkdir unpack
+            if [[ "$asset" == *.ipk ]]; then
+              tar -xzOf "$asset" ./data.tar.gz | tar -xz -C unpack
+            else
+              tar --ignore-zeros -xzf "$asset" -C unpack
+            fi
+            binary=unpack/usr/bin/aether-dns
+            echo "=== $asset ==="
+            file "$binary" | tee file.txt
+            grep -F 'statically linked' file.txt
+            readelf -d "$binary" | tee dynamic.txt
+            ! grep -q NEEDED dynamic.txt
+            if [[ "$asset" == *aarch64_generic* ]]; then
+              version=$(qemu-aarch64-static "$binary" -V)
+            else
+              version=$("$binary" -V)
+            fi
+            echo "$version"
+            [[ "$version" == 'aether-dns 1.0.0' ]]
+          done
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: release-assets
+          path: assets/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: release-assets
+          path: assets
+      - name: Verify assets again
+        run: sh tests/ci/verify-assets.sh assets
+      - name: Refuse retransmission and publish in fixed order
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9][0-9A-Za-z._+-]*$ ]] || exit 1
+          # Query success means ANY existing release (including an empty/draft one).
+          # Only a definitive 404 permits creation; authentication/network errors fail closed.
+          if gh api "repos/$GH_REPO/releases/tags/$TAG" > release.json 2> release.err; then
+            echo '::error::Release or assets already exist; refusing retransmission' >&2
+            exit 1
+          elif ! grep -q 'HTTP 404' release.err; then
+            cat release.err >&2
+            exit 1
+          fi
+          printf '# aether-dns %s\n\nStatic musl packages for OpenWrt 24.10 (ipk) and 25.12 (apk).\nVerify SHA256SUMS before installing.\n' "${TAG#v}" > release-notes.md
+          gh release create "$TAG" --verify-tag --notes-file release-notes.md
+          for asset in \
+            aether-dns_1.0.0-r1_aarch64_generic.ipk \
+            aether-dns_1.0.0-r1_x86_64.ipk \
+            aether-dns-1.0.0-r1_aarch64_generic.apk \
+            aether-dns-1.0.0-r1_x86_64.apk \
+            SHA256SUMS; do
+            gh release upload "$TAG" "assets/$asset"
+          done

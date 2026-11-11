@@ -3,8 +3,10 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=aether-dns
 PKG_VERSION:=1.0.0
 PKG_RELEASE:=1
+PKG_SOURCE:=aether-dns-$(PKG_VERSION).tar.gz
 
 PKG_LICENSE:=GPL-3.0-or-later
+PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=leochien0102 <leochien0102@users.noreply.github.com>
 
 include $(INCLUDE_DIR)/package.mk
