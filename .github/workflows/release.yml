@@ -175,7 +175,7 @@ jobs:
           tool=$(find . -path '*staging_dir/host/bin/apk' -type f | head -1)
           test -n "$tool"
           echo "APK_TOOL=$PWD/${tool#./}" >> "$GITHUB_ENV"
-          "$APK_TOOL" --version
+          "$PWD/${tool#./}" --version
 
       # apk is an apk-tools v3 ADB container, not a tar stream: install it with the
       # SDK's own apk tool (architecture override works on the host).
