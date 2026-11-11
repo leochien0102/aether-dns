@@ -121,6 +121,10 @@ jobs:
           FEEDNAME: aetherdns
           FEED_DIR: ${{ github.workspace }}/feed
           PACKAGES: aether-dns
+          # This package installs a prebuilt binary only: no init scripts, no /etc files.
+          # The action's shfmt gate runs `git diff` inside the mounted feed, which is not a
+          # git checkout, so it can only fail (exit 128) rather than report a format issue.
+          NO_SHFMT_CHECK: '1'
       - name: Normalize asset name
         env:
           ARCH: ${{ matrix.package_arch }}
