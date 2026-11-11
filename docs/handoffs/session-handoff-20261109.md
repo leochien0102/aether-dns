@@ -11,7 +11,7 @@
 | Git远端/tag/worktree | **没有配置remote、没有tag；worktree list只有主树**。本轮没有独立公开Release或云CI可引用，不要自动添加origin/创建仓库/推送 |
 | 实际设备构建源码 | `325b614a7bb927cc94dc6d7b38751010e9be8531`，M4-01接受合并 |
 | B3固定真实引擎测试源码 | `a3d42a278ce84ba5ed54988a9d30a695b7ec97b5`，其自身为后续设计文档提交 |
-| 当前生产代码差异 | main与上述两个基准的src/Cargo.toml/Cargo.lock均无diff；**无需为本轮proxy r7重建DNS** |
+| 当前生产代码差异 | 相对 325b614 仅 5 个文件：`src/main.rs` banner 改由 crate 版本派生（M4-03）、`src/server.rs`+`src/upstream_group.rs` 上游失败日志（M4-08）、`Cargo.toml`/`Cargo.lock` 版本字段；查询路由/缓存/配置逻辑无改动，**无需为 proxy r7 重建 DNS** |
 | Cargo package.version | **1.0.0**，M4-03 已完成仓库侧 semver 迁移，尚未打包/部署 |
 | 二进制-V第二字段 | **1.0.0**，由 Cargo 包版本派生（仓库构建，非设备已装版本） |
 | H28K本地opkg包 | **2026.11.04-1**，尚不是独立semver正式发行 |
