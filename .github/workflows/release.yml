@@ -142,6 +142,34 @@ jobs:
           [[ ${#files[@]} == 1 ]] || exit 1
           mkdir -p assets
           cp "${files[0]}" "assets/$name"
+      # apk is an apk-tools v3 ADB container, not a tar stream: only the SDK's own
+      # apk tool can install it. Verify provides, the binary and static linkage here.
+      - name: Verify apk metadata and payload
+        if: matrix.ext == 'apk'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+          pkg=$(ls assets/*.apk)
+          root=$(mktemp -d)
+          ./staging_dir/host/bin/apk add --usermode --root "$root" --initdb \
+            --allow-untrusted --no-network --force-non-repository --no-scripts "$pkg"
+          ./staging_dir/host/bin/apk info --root "$root" -a aether-dns | tee apk-info.txt
+          grep -q 'dns-engine' apk-info.txt
+          binary="$root/usr/bin/aether-dns"
+          test -x "$binary"
+          file "$binary" | tee apk-file.txt
+          grep -F 'statically linked' apk-file.txt
+          readelf -d "$binary" | tee apk-dynamic.txt
+          ! grep -q NEEDED apk-dynamic.txt
+          if [[ "${{ matrix.package_arch }}" == aarch64_generic ]]; then
+            version=$(qemu-aarch64-static "$binary" -V)
+          else
+            version=$("$binary" -V)
+          fi
+          echo "$version"
+          [[ "$version" == 'aether-dns 1.0.0' ]]
+
       - uses: actions/upload-artifact@v4.6.2
         with:
           name: package-${{ matrix.sdk }}-${{ matrix.package_arch }}
@@ -164,19 +192,18 @@ jobs:
           set -euo pipefail
           (cd assets && sha256sum aether-dns_*.ipk aether-dns-*.apk > SHA256SUMS)
           sh tests/ci/verify-assets.sh assets
-      - name: Check packaged binaries (four versions and static linkage)
+      - name: Check ipk payloads (versions and static linkage)
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
-          for asset in assets/*.ipk assets/*.apk; do
+          # The package metadata must declare the virtual provider for both formats.
+          grep -q 'PROVIDES:=dns-engine' openwrt/Makefile
+          grep -q 'DEFAULT_VARIANT:=1' openwrt/Makefile
+          for asset in assets/*.ipk; do
             rm -rf unpack
             mkdir unpack
-            if [[ "$asset" == *.ipk ]]; then
-              tar -xzOf "$asset" ./data.tar.gz | tar -xz -C unpack
-            else
-              tar --ignore-zeros -xzf "$asset" -C unpack
-            fi
+            tar -xzOf "$asset" ./data.tar.gz | tar -xz -C unpack
             binary=unpack/usr/bin/aether-dns
             echo "=== $asset ==="
             file "$binary" | tee file.txt
