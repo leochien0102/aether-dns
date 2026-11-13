@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/dns/mod.rs"]
 mod dns;
+#[path = "common/in_process.rs"]
+mod in_process;
 #[path = "../src/lists.rs"]
 mod lists;
 #[path = "../src/server.rs"]
@@ -17,7 +19,7 @@ use server::ip_test::IpTest;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::net::{TcpListener, UdpSocket};
 use tokio::time::{Duration, sleep, timeout};
 
 struct FakeIpTest {
@@ -175,31 +177,17 @@ async fn check(case: Case) {
             }));
         }
     }
-    let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = reservation.local_addr().unwrap().port();
-    config.bind_port = vec![port];
-    drop(reservation);
-    let (shutdown, receiver) = tokio::sync::watch::channel(false);
-    let testing = fake.clone();
-    let serving = tokio::spawn(async move {
-        server::run_with_ip_test(config, receiver, testing)
-            .await
-            .map_err(|e| e.to_string())
-    });
-    timeout(Duration::from_secs(2), async {
-        loop {
-            if TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+    let (port, shutdown, serving) = in_process::start(|port, receiver| {
+        let mut config = config.clone();
+        config.bind_port = vec![port];
+        let testing = fake.clone();
+        async move {
+            server::run_with_ip_test(config, receiver, testing)
                 .await
-                .is_ok()
-            {
-                break;
-            }
-            assert!(!serving.is_finished());
-            sleep(Duration::from_millis(5)).await;
+                .map_err(|e| e.to_string())
         }
     })
-    .await
-    .unwrap();
+    .await;
     let mut query = vec![0x42, 0x42, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];
     query.extend_from_slice(b"\x04none\x07example\0");
     query.extend_from_slice(&case.qtype.to_be_bytes());

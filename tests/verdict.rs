@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/dns/mod.rs"]
 mod dns;
+#[path = "common/in_process.rs"]
+mod in_process;
 #[path = "../src/lists.rs"]
 mod lists;
 #[path = "../src/server.rs"]
@@ -167,28 +169,18 @@ async fn check(capacity: Option<u64>, member: bool, upstream_tcp: bool, steps: V
             }
         }));
     }
-    let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = reservation.local_addr().unwrap();
-    config.bind_port = vec![address.port()];
-    drop(reservation);
-    let (shutdown, receiver) = tokio::sync::watch::channel(false);
-    let testing = fake.clone();
-    let serving = tokio::spawn(async move {
-        server::run_with_ip_test(config, receiver, testing)
-            .await
-            .map_err(|e| e.to_string())
-    });
-    timeout(Duration::from_secs(2), async {
-        loop {
-            if TcpStream::connect(address).await.is_ok() {
-                break;
-            }
-            assert!(!serving.is_finished());
-            sleep(Duration::from_millis(5)).await;
+    let (port, shutdown, serving) = in_process::start(|port, receiver| {
+        let mut config = config.clone();
+        config.bind_port = vec![port];
+        let testing = fake.clone();
+        async move {
+            server::run_with_ip_test(config, receiver, testing)
+                .await
+                .map_err(|e| e.to_string())
         }
     })
-    .await
-    .unwrap();
+    .await;
+    let address = (Ipv4Addr::LOCALHOST, port);
     for (index, step) in steps.into_iter().enumerate() {
         *modes.lock().unwrap() = step.modes;
         let mut query = vec![0x42, index as u8, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0];

@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/dns/mod.rs"]
 mod dns;
+#[path = "common/in_process.rs"]
+mod in_process;
 #[path = "../src/lists.rs"]
 mod lists;
 #[path = "../src/server.rs"]
@@ -21,7 +23,7 @@ use std::sync::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::time::{Duration, sleep, timeout};
+use tokio::time::{Duration, timeout};
 
 struct NoIpTest;
 impl IpTest for NoIpTest {
@@ -49,11 +51,9 @@ async fn check(tcp: bool, qtype: u16, no_ipv6: bool, filter: Vec<u16>, blocked: 
             stream.write_all(&wire).await.unwrap();
         }
     });
-    let reservation = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = reservation.local_addr().unwrap().port();
     let config = Config {
         bind_addr: vec![Ipv4Addr::LOCALHOST],
-        bind_port: vec![port],
+        bind_port: vec![],
         default_tag: Some(Tag::None),
         trust_dns: vec![Upstream {
             protocol: Some(Protocol::Tcp),
@@ -65,27 +65,16 @@ async fn check(tcp: bool, qtype: u16, no_ipv6: bool, filter: Vec<u16>, blocked: 
         filter_qtype: filter.into_iter().collect(),
         ..Config::default()
     };
-    drop(reservation);
-    let (shutdown, receiver) = tokio::sync::watch::channel(false);
-    let serving = tokio::spawn(async move {
-        server::run_with_ip_test(config, receiver, Arc::new(NoIpTest))
-            .await
-            .map_err(|e| e.to_string())
-    });
-    timeout(Duration::from_secs(2), async {
-        loop {
-            if TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+    let (port, shutdown, serving) = in_process::start(|port, receiver| {
+        let mut config = config.clone();
+        config.bind_port = vec![port];
+        async move {
+            server::run_with_ip_test(config, receiver, Arc::new(NoIpTest))
                 .await
-                .is_ok()
-            {
-                break;
-            }
-            assert!(!serving.is_finished());
-            sleep(Duration::from_millis(5)).await;
+                .map_err(|e| e.to_string())
         }
     })
-    .await
-    .unwrap();
+    .await;
 
     // RD/CD and mixed-case question must survive unchanged. Include OPT so
     // local filtering must remove actual additional bytes, not just ARCOUNT.

@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/dns/mod.rs"]
 mod dns;
+#[path = "common/in_process.rs"]
+mod in_process;
 #[path = "../src/lists.rs"]
 mod lists;
 #[path = "../src/server.rs"]
@@ -21,7 +23,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::{
-    net::{TcpListener, UdpSocket},
+    net::UdpSocket,
     time::{Duration, timeout},
 };
 
@@ -261,12 +263,8 @@ async fn forwarding(writer_fails: bool, tcp: bool) {
         response[..2].copy_from_slice(&buffer[..2]);
         fake_upstream.send_to(&response, peer).await.unwrap();
     });
-    let reserve = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = reserve.local_addr().unwrap().port();
-    drop(reserve);
     let mut config = config();
     config.default_tag = Some(Tag::Gfw);
-    config.bind_port = vec![port];
     config.trust_dns = vec![Upstream {
         protocol: Some(config::Protocol::Udp),
         host: None,
@@ -277,26 +275,17 @@ async fn forwarding(writer_fails: bool, tcp: bool) {
         fail: writer_fails,
         ..FakeWriter::default()
     });
-    let (shutdown, receiver) = tokio::sync::watch::channel(false);
-    let injected = writer.clone();
-    let serving = tokio::spawn(async move {
-        server::run_with_ip_writer(config, receiver, Arc::new(NoChina), injected)
-            .await
-            .map_err(|e| e.to_string())
-    });
-    timeout(Duration::from_secs(2), async {
-        loop {
-            if tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+    let (port, shutdown, serving) = in_process::start(|port, receiver| {
+        let mut config = config.clone();
+        config.bind_port = vec![port];
+        let injected = writer.clone();
+        async move {
+            server::run_with_ip_writer(config, receiver, Arc::new(NoChina), injected)
                 .await
-                .is_ok()
-            {
-                break;
-            }
-            tokio::task::yield_now().await;
+                .map_err(|e| e.to_string())
         }
     })
-    .await
-    .unwrap();
+    .await;
     let response = timeout(Duration::from_secs(2), async {
         if tcp {
             let mut client = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
