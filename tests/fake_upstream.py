@@ -141,9 +141,12 @@ def server(binary, source, upstream_port, directory):
             config = re.sub(r"(?m)^(?:cache|cache-stale)(?:[ \t]+[^\n]*)?$\n?", "", config)
         path = directory / "chinadns.conf"
         path.write_text(config)
+        # Readiness is a lifecycle line on stdout; stderr carries errors only (bind
+        # failures included), so both streams are captured for diagnosis.
         log = directory / f"server-{attempt}.log"
-        with log.open("w") as stderr:
-            child = subprocess.Popen([binary, "-C", str(path)], stdout=subprocess.DEVNULL, stderr=stderr)
+        errlog = directory / f"server-{attempt}.stderr.log"
+        with log.open("w") as stdout, errlog.open("w") as stderr:
+            child = subprocess.Popen([binary, "-C", str(path)], stdout=stdout, stderr=stderr)
         try:
             deadline = time.monotonic() + TIMEOUT
             while child.poll() is None and time.monotonic() < deadline:
@@ -151,7 +154,7 @@ def server(binary, source, upstream_port, directory):
                     break
                 time.sleep(0.01)
             else:
-                diagnostic = log.read_text()
+                diagnostic = log.read_text() + errlog.read_text()
                 if "Address already in use" in diagnostic:
                     continue
                 raise RuntimeError(f"SUT not ready: {diagnostic}")

@@ -140,7 +140,7 @@ pub async fn run_with_cache_clock(
     });
     let mut tasks = JoinSet::new();
     for socket in sockets {
-        eprintln!("listening UDP {}", socket.local_addr()?);
+        println!("listening UDP {}", socket.local_addr()?);
         let upstream = upstream.clone();
         let mut shutdown = shutdown.clone();
         tasks.spawn(async move {
@@ -187,7 +187,7 @@ pub async fn run_with_cache_clock(
     }
     // Keep all UDP readiness lines ahead of TCP readiness lines.
     for listener in listeners {
-        eprintln!("listening TCP {}", listener.local_addr()?);
+        println!("listening TCP {}", listener.local_addr()?);
         let upstream = upstream.clone();
         let mut shutdown = shutdown.clone();
         tasks.spawn(async move {
@@ -221,11 +221,12 @@ pub async fn run_with_cache_clock(
             while queries.join_next().await.is_some() {}
         });
     }
-    // Keep the M1 stderr readiness/shutdown protocol unchanged.
+    // Stream contract: lifecycle lines (readiness, shutdown) go to stdout so procd
+    // records them as daemon.info; genuine errors stay on stderr (daemon.err).
     shutdown.changed().await?;
     // Drop cancels all refreshes; None also prevents spawning during query drain.
     upstream.refresh_tasks.lock().unwrap().take();
-    eprintln!("shutdown: draining queries (500 ms maximum)");
+    println!("shutdown: draining queries (500 ms maximum)");
     // One shared budget, not 500 ms per listener or per query. Dropping the
     // listener JoinSet aborts its query JoinSet as well, discarding late work.
     let _ = timeout(Duration::from_millis(500), async {
@@ -299,7 +300,7 @@ async fn handle_query(
     match forward(upstream, &mut query, client_id, client_protocol).await {
         Ok(response) => Some(response),
         Err(error) => {
-            eprintln!("upstream failed for client {peer}: {error}");
+            println!("upstream failed for client {peer}: {error}");
             let mut response = original;
             dns::synthetic_nodata(&mut response).ok()?;
             response[3] = (response[3] & 0xf0) | 2;

@@ -10,7 +10,8 @@ struct Server {
     child: Child,
     path: std::path::PathBuf,
     endpoint: SocketAddr,
-    logs: Receiver<String>,
+    info: Receiver<String>,
+    errors: Receiver<String>,
 }
 
 impl Server {
@@ -34,14 +35,26 @@ impl Server {
         let mut child = Command::new(env!("CARGO_BIN_EXE_aether-dns"))
             .arg("-C")
             .arg(&path)
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
-        let (sender, logs) = mpsc::channel();
+        // Readiness and shutdown are lifecycle lines on stdout; stderr is errors only.
+        // Both streams are drained so the child never blocks on a full pipe.
+        let (info_sender, info) = mpsc::channel();
+        let (error_sender, errors) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                if info_sender.send(line.unwrap()).is_err() {
+                    break;
+                }
+            }
+        });
         std::thread::spawn(move || {
             for line in BufReader::new(stderr).lines() {
-                if sender.send(line.unwrap()).is_err() {
+                if error_sender.send(line.unwrap()).is_err() {
                     break;
                 }
             }
@@ -50,16 +63,17 @@ impl Server {
             child,
             path,
             endpoint: "127.0.0.1:0".parse().unwrap(),
-            logs,
+            info,
+            errors,
         };
-        let first = server.logs.recv_timeout(SECOND).unwrap();
+        let first = server.info.recv_timeout(SECOND).unwrap();
         server.endpoint = first
             .strip_prefix("listening UDP ")
-            .expect("first stderr line must remain listening UDP")
+            .expect("first stdout line must remain listening UDP")
             .parse()
             .unwrap();
         assert_eq!(
-            server.logs.recv_timeout(SECOND).unwrap(),
+            server.info.recv_timeout(SECOND).unwrap(),
             format!("listening TCP {}", server.endpoint)
         );
         server
@@ -80,8 +94,13 @@ impl Server {
 
     fn stopping(&self) {
         assert_eq!(
-            self.logs.recv_timeout(SECOND).unwrap(),
+            self.info.recv_timeout(SECOND).unwrap(),
             "shutdown: draining queries (500 ms maximum)"
+        );
+        // This lifecycle line must not reach stderr.
+        assert!(
+            self.errors.try_recv().is_err(),
+            "shutdown must not write to stderr"
         );
     }
 

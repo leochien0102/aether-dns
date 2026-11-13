@@ -21,9 +21,9 @@ fn failure_log_names_upstream_not_client() {
         b"\x42\x42\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x01a\x07example\x00\x00\x01\x00\x01";
     client.send_to(query, server.endpoints[0]).unwrap();
     let line = server
-        .logs
+        .info
         .recv_timeout(Duration::from_secs(3))
-        .expect("next stderr line must diagnose the failed query");
+        .expect("next stdout line must diagnose the failed query");
     assert!(line.starts_with("upstream failed for client "), "{line}");
     assert!(line.contains(&format!("tcp://{upstream}: ")), "{line}");
     assert!(!line.contains(&format!("upstream {client_addr}")), "{line}");
