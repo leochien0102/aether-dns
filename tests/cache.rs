@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/dns/mod.rs"]
 mod dns;
+#[path = "common/in_process.rs"]
+mod in_process;
 #[path = "../src/lists.rs"]
 mod lists;
 #[path = "../src/server.rs"]
@@ -182,13 +184,10 @@ impl Harness {
                 }
             }
         });
-        let reserve = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = reserve.local_addr().unwrap().port();
-        drop(reserve);
         let mut config = Config {
             cache: capacity,
             cache_stale: Some(stale),
-            bind_port: vec![port],
+            bind_port: vec![],
             default_tag: Some(Tag::Gfw),
             trust_dns: vec![Upstream {
                 protocol: None,
@@ -210,28 +209,17 @@ impl Harness {
         let clock = Arc::new(FakeClock::default());
         let ip = Arc::new(IpTest::default());
         let writer = Arc::new(Writer::default());
-        let (shutdown, receiver) = watch::channel(false);
-        let serving = {
+        let (port, shutdown, serving) = in_process::start(|port, receiver| {
+            let mut config = config.clone();
+            config.bind_port = vec![port];
             let (clock, ip, writer) = (clock.clone(), ip.clone(), writer.clone());
-            tokio::spawn(async move {
+            async move {
                 server::run_with_cache_clock(config, receiver, ip, writer, clock)
                     .await
                     .map_err(|e| e.to_string())
-            })
-        };
-        timeout(Duration::from_secs(2), async {
-            loop {
-                if TcpStream::connect((Ipv4Addr::LOCALHOST, port))
-                    .await
-                    .is_ok()
-                {
-                    break;
-                }
-                tokio::task::yield_now().await;
             }
         })
-        .await
-        .unwrap();
+        .await;
         Self {
             port,
             hits,
