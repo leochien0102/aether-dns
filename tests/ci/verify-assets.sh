@@ -18,17 +18,37 @@ def require(ok, message):
         raise SystemExit(message)
 
 
-expected = {
-    f'aether-dns{separator}1.0.0-r1_{arch}.{ext}'
-    for ext, separator in [('ipk', '_'), ('apk', '-')]
-    for arch in ['aarch64_generic', 'x86_64']
-}
+# Version-agnostic: the package version comes from openwrt/Makefile, so a release
+# must not need edits here. Names are aether-dns_<ver>-r<rel>_<arch>.ipk (opkg) and
+# aether-dns-<ver>-r<rel>_<arch>.apk (apk); both carry the same version.
+NAME_RE = re.compile(r'^aether-dns([_-])([0-9][0-9A-Za-z.+~-]*)_(aarch64_generic|x86_64)\.(ipk|apk)$')
+ARCHES = ['aarch64_generic', 'x86_64']
+FORMATS = ['ipk', 'apk']
+
 entries = list(pathlib.Path('.').iterdir())
-require({p.name for p in entries} == expected | {'SHA256SUMS'},
-        'Asset filename set mismatch (exactly four packages + SHA256SUMS required)')
+require({p.name for p in entries} >= {'SHA256SUMS'},
+        'SHA256SUMS is missing')
+packages = [p for p in entries if p.name != 'SHA256SUMS']
+require(len(packages) == 4, 'Exactly four package assets are required')
 require(all(p.is_file() and not p.is_symlink() for p in entries),
         'Assets must be regular files, not symlinks')
 require(all(p.stat().st_size > 0 for p in entries), 'Empty asset file')
+
+parsed = {}
+for path in packages:
+    match = NAME_RE.fullmatch(path.name)
+    require(match is not None, f'Invalid asset filename: {path.name}')
+    separator, version, arch, ext = match.groups()
+    require(separator == ('_' if ext == 'ipk' else '-'),
+            f'Wrong separator for {ext}: {path.name}')
+    parsed[(arch, ext)] = version
+require(set(parsed) == {(arch, ext) for arch in ARCHES for ext in FORMATS},
+        'Asset set mismatch (both formats for both architectures required)')
+versions = set(parsed.values())
+require(len(versions) == 1, f'Inconsistent package versions: {sorted(versions)}')
+version = versions.pop()
+require(re.fullmatch(r'[0-9][0-9A-Za-z.+~-]*-r[0-9]+', version) is not None,
+        f'Invalid version-release: {version}')
 
 lines = pathlib.Path('SHA256SUMS').read_text().splitlines()
 require(len(lines) == 4, 'SHA256SUMS must contain exactly four entries')
@@ -37,11 +57,11 @@ for line in lines:
     match = re.fullmatch(r'[0-9a-f]{64}  ([A-Za-z0-9_.-]+)', line)
     require(match is not None, 'Invalid checksum entry')
     names.append(match[1])
-require(set(names) == expected and len(set(names)) == 4,
+require(set(names) == {p.name for p in packages} and len(set(names)) == 4,
         'Checksum coverage mismatch')
 subprocess.run(['sha256sum', '-c', 'SHA256SUMS'], check=True)
 
-for name in sorted(expected):
+for name in sorted({p.name for p in packages}):
     if not name.endswith('.ipk'):
         print(f'=== {name} === (apk metadata verified in the packages job)', flush=True)
         continue
@@ -53,7 +73,7 @@ for name in sorted(expected):
         if ':' in line:
             key, value = line.split(':', 1)
             fields.setdefault(key.strip(), []).append(value.strip())
-    required = {'Package': 'aether-dns', 'Version': '1.0.0-r1',
+    required = {'Package': 'aether-dns', 'Version': version,
                 'Provides': 'dns-engine', 'Architecture': arch,
                 'License': 'GPL-3.0-or-later'}
     print(f'=== {name} ===', flush=True)
@@ -69,5 +89,5 @@ for name in sorted(expected):
     # constant, not a host path. Reject only build-host specific prefixes.
     require(not re.search(r'^(/home/|/workspace/|/tmp/|[A-Za-z]:[\\/])', source[0]),
             f'{name}: host-specific Source path')
-print('Verified exact four-asset set, checksum manifest and ipk metadata', flush=True)
+print(f'Verified four-asset set ({version}), checksum manifest and ipk metadata', flush=True)
 PY

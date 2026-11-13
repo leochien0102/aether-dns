@@ -67,7 +67,8 @@ jobs:
             version=$(binary/aether-dns -V)
           fi
           echo "$version"
-          [[ "$version" == 'aether-dns 1.0.0' ]]
+          expected="aether-dns $(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n1)"
+          [[ "$version" == "$expected" ]]
       - uses: actions/upload-artifact@v4.6.2
         with:
           name: binary-${{ matrix.arch }}
@@ -132,12 +133,16 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
+          # Release assets must follow the package version, never a hardcoded one.
+          ver=$(sed -n 's/^PKG_VERSION:=//p' openwrt/Makefile | head -n1)
+          rel=$(sed -n 's/^PKG_RELEASE:=//p' openwrt/Makefile | head -n1)
+          [[ -n "$ver" && -n "$rel" ]] || { echo 'cannot read package version' >&2; exit 1; }
           if [[ "$EXT" == ipk ]]; then
             files=(bin/packages/"$ARCH"/aetherdns/aether-dns_*.ipk)
-            name="aether-dns_1.0.0-r1_$ARCH.ipk"
+            name="aether-dns_${ver}-r${rel}_$ARCH.ipk"
           else
             files=(bin/packages/"$ARCH"/aetherdns/aether-dns-*.apk)
-            name="aether-dns-1.0.0-r1_$ARCH.apk"
+            name="aether-dns-${ver}-r${rel}_$ARCH.apk"
           fi
           [[ ${#files[@]} == 1 ]] || exit 1
           mkdir -p assets
@@ -203,7 +208,8 @@ jobs:
               version=$("$binary" -V)
             fi
             echo "$version"
-            [[ "$version" == 'aether-dns 1.0.0' ]]
+            expected="aether-dns $(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n1)"
+          [[ "$version" == "$expected" ]]
           done
 
       - name: Check ipk payloads (versions and static linkage)
@@ -230,7 +236,8 @@ jobs:
               version=$("$binary" -V)
             fi
             echo "$version"
-            [[ "$version" == 'aether-dns 1.0.0' ]]
+            expected="aether-dns $(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n1)"
+          [[ "$version" == "$expected" ]]
           done
       - uses: actions/upload-artifact@v4.6.2
         with:
@@ -275,11 +282,9 @@ jobs:
           fi
           printf '# aether-dns %s\n\nStatic musl packages for OpenWrt 24.10 (ipk) and 25.12 (apk).\nVerify SHA256SUMS before installing.\n' "${TAG#v}" > release-notes.md
           gh release create "$TAG" --verify-tag --notes-file release-notes.md
-          for asset in \
-            aether-dns_1.0.0-r1_aarch64_generic.ipk \
-            aether-dns_1.0.0-r1_x86_64.ipk \
-            aether-dns-1.0.0-r1_aarch64_generic.apk \
-            aether-dns-1.0.0-r1_x86_64.apk \
-            SHA256SUMS; do
-            gh release upload "$TAG" "assets/$asset"
+          shopt -s nullglob
+          files=(assets/aether-dns_*_*.ipk assets/aether-dns-*_*.apk assets/SHA256SUMS)
+          [[ ${#files[@]} == 5 ]] || { echo 'unexpected release asset count' >&2; exit 1; }
+          for asset in "${files[@]}"; do
+            gh release upload "$TAG" "$asset"
           done
