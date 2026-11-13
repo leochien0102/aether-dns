@@ -13,7 +13,11 @@ pub struct Server {
     pub child: Child,
     path: PathBuf,
     pub endpoints: Vec<SocketAddr>,
-    pub logs: Receiver<String>,
+    /// stdout: lifecycle/informational lines (readiness, shutdown, upstream diagnostics).
+    pub info: Receiver<String>,
+    /// stderr: genuine errors only. Only some test targets assert on it.
+    #[allow(dead_code)]
+    pub errors: Receiver<String>,
 }
 
 impl Server {
@@ -83,6 +87,7 @@ impl Server {
             let child = Command::new(env!("CARGO_BIN_EXE_aether-dns"))
                 .arg("-C")
                 .arg(&path)
+                .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn();
             let mut child = match child {
@@ -92,15 +97,29 @@ impl Server {
                     panic!("spawn test server: {error}");
                 }
             };
+            let stdout = child.stdout.take().unwrap();
             let stderr = child.stderr.take().unwrap();
-            let (sender, logs) = mpsc::channel();
-            let reader = std::thread::spawn(move || {
+            let (info_sender, info) = mpsc::channel();
+            let (error_sender, errors) = mpsc::channel();
+            let info_reader = std::thread::spawn(move || {
+                for line in BufReader::new(stdout).lines() {
+                    match line {
+                        Ok(line) => {
+                            println!("[stdout] {line}");
+                            // Always drain stdout even when the consumer is gone.
+                            let _ = info_sender.send(line);
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+            let error_reader = std::thread::spawn(move || {
                 for line in BufReader::new(stderr).lines() {
                     match line {
                         Ok(line) => {
-                            eprintln!("{line}");
+                            eprintln!("[stderr] {line}");
                             // Always drain stderr even when the consumer is gone.
-                            let _ = sender.send(line);
+                            let _ = error_sender.send(line);
                         }
                         Err(_) => break,
                     }
@@ -110,7 +129,8 @@ impl Server {
                 child,
                 path,
                 endpoints,
-                logs,
+                info,
+                errors,
             };
             let ready = server.ready(startup_timeout);
             match ready {
@@ -119,7 +139,8 @@ impl Server {
                     failures.push(format!("attempt {attempt}, ports {ports:?}: {error}"));
                     // Drop performs kill + wait + unlink before the next attempt.
                     drop(server);
-                    reader.join().unwrap();
+                    info_reader.join().unwrap();
+                    error_reader.join().unwrap();
                 }
             }
         }
@@ -129,22 +150,43 @@ impl Server {
         );
     }
 
+    /// Collect stderr lines seen so far, waiting briefly for the reader thread.
+    /// Startup failures (bind errors included) are reported there, so the retry
+    /// message must carry them to stay diagnosable.
+    fn drain_errors(&self) -> String {
+        let mut text = String::new();
+        while let Ok(line) = self.errors.recv_timeout(Duration::from_millis(100)) {
+            text.push_str(&line);
+            text.push('\n');
+        }
+        text
+    }
+
     fn ready(&mut self, timeout: Duration) -> Result<(), String> {
         for protocol in ["UDP", "TCP"] {
             for endpoint in &self.endpoints {
                 let expected = format!("listening {protocol} {endpoint}");
-                let line = self.logs.recv_timeout(timeout).map_err(|error| {
-                    format!("before {expected}: stderr closed or timed out: {error}")
+                let line = self.info.recv_timeout(timeout).map_err(|error| {
+                    format!(
+                        "before {expected}: stdout closed or timed out: {error}; stderr: {}",
+                        self.drain_errors()
+                    )
                 })?;
                 // Any unexpected diagnostic (including bind errors / Address already
                 // in use) fails this port; it must never be mistaken for readiness.
                 if line != expected {
-                    return Err(format!("expected {expected:?}, got {line:?}"));
+                    return Err(format!(
+                        "expected {expected:?} on stdout, got {line:?}; stderr: {}",
+                        self.drain_errors()
+                    ));
                 }
             }
         }
         if let Some(status) = self.child.try_wait().map_err(|error| error.to_string())? {
-            return Err(format!("exited during startup: {status}"));
+            return Err(format!(
+                "exited during startup: {status}; stderr: {}",
+                self.drain_errors()
+            ));
         }
         Ok(())
     }

@@ -199,7 +199,7 @@ fn shutdown_preempts_timeout_and_keeps_shared_drain_budget() {
                 .success()
         );
         assert_eq!(
-            server.process.logs.recv_timeout(SECOND).unwrap(),
+            server.process.info.recv_timeout(SECOND).unwrap(),
             "shutdown: draining queries (500 ms maximum)"
         );
         idle.set_read_timeout(Some(SECOND)).unwrap();
