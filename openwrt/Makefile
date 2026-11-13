@@ -17,9 +17,9 @@ ifeq ($(LOCAL_BINARY),)
 PKG_SOURCE:=aether-dns_$(PKG_VERSION)-r$(PKG_RELEASE)_$(ARCH).ipk
 PKG_SOURCE_URL:=https://github.com/leochien0102/aether-dns/releases/download/v$(PKG_VERSION)/
 ifeq ($(ARCH),aarch64_generic)
-PKG_HASH:=7b2a2bebb82b2ea30543f48252a74d6fa921121c11b152fd1fffcc67d2cb37ad
+PKG_HASH:=1dbc307cce8b1f1e35035e5ff61b84d30c60da8cced0c9f49f715d433e6de6a7
 else ifeq ($(ARCH),x86_64)
-PKG_HASH:=504a64d0dec74917dbeca090a6bb522c4e5052a01e8cbc018e2fed15eaa1a511
+PKG_HASH:=f0a526775eed5d8ee1e27fd1f755784fbd19abef0f69f9dfed00ef214a337da4
 else
 # 其它架构由 DEPENDS 挡在门外；留空哈希让构建阶段报错，避免解析阶段中断 feed 索引。
 PKG_HASH:=
