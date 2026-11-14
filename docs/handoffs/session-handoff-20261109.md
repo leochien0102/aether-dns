@@ -12,9 +12,11 @@
 | 实际设备构建源码 | `325b614a7bb927cc94dc6d7b38751010e9be8531`，M4-01接受合并 |
 | B3固定真实引擎测试源码 | `a3d42a278ce84ba5ed54988a9d30a695b7ec97b5`，其自身为后续设计文档提交 |
 | 当前生产代码差异 | 相对 325b614 仅 5 个文件：`src/main.rs` banner 改由 crate 版本派生（M4-03）、`src/server.rs`+`src/upstream_group.rs` 上游失败日志（M4-08）、`Cargo.toml`/`Cargo.lock` 版本字段；查询路由/缓存/配置逻辑无改动，**无需为 proxy r7 重建 DNS** |
-| Cargo package.version | **1.0.0**，M4-03 已完成仓库侧 semver 迁移 |
-| 二进制-V第二字段 | **1.0.0**，由 Cargo 包版本派生（仓库构建，非设备已装版本） |
-| **公开发布（2026-11-11）** | tag `v1.0.0`（annotated）→ **正式 Release**，四个资产 + `SHA256SUMS`：`aether-dns_1.0.0-r1_{aarch64_generic,x86_64}.ipk`、`aether-dns-1.0.0-r1_{aarch64_generic,x86_64}.apk`；CI 由 tag 触发，资产重传会被拒绝。**未部署到任何设备** |
+| Cargo package.version | **1.0.2**（M4-13 发布准备），与 `openwrt/Makefile` 核心由 `tests/ci/check-version.sh` 守卫 |
+| 二进制-V第二字段 | **1.0.2**，完整输出仅 `aether-dns 1.0.2`，由 Cargo 派生；按所有者指示不带修订（非设备已装版本） |
+| OpenWrt 包版本 | **1.0.2-r1**（`PKG_VERSION=1.0.2`、`PKG_RELEASE=1`）；本仓库配方仅打包本地二进制，feeds 配方迁至 proxy 仓库 |
+| **发布准备（2026-11-14）** | `v1.0.2` 预期七资产：`aether-dns_1.0.2-r1_{aarch64_generic,x86_64}.ipk`、`aether-dns-1.0.2-r1_{aarch64_generic,x86_64}.apk`、无扩展名 `aether-dns-1.0.2-r1-{aarch64_generic,x86_64}`、`SHA256SUMS`（覆盖六资产）。**tag/Release 与裸二进制 sha256 待设计负责人 CI 运行后回填，尚未发布 1.0.2**；Release 不保留可执行位，消费方下载后须 `chmod +x` |
+| 已公开发布 | `v1.0.0`、`v1.0.1` 各四包 + `SHA256SUMS`；资产重传会被拒绝。未因 M4-13 部署到任何设备 |
 | H28K本地opkg包 | **2026.11.04-1**，设备侧仍是日期版本，未升级到 1.0.0 |
 
 本文件及入口更新是新增的**本地文档提交，未推送、不构建、不测试**；「无 remote」的旧结论已于 2026-11-11 作废，改为上面的公开发布状态。不要从目录名、Cargo版本或proxy tag猜测DNS发行状态。

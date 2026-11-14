@@ -1,30 +1,15 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aether-dns
-PKG_VERSION:=1.0.1
+PKG_VERSION:=1.0.2
 PKG_RELEASE:=1
 
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=leochien0102 <leochien0102@users.noreply.github.com>
 
-# 两种构建方式：
-#  - DNS 仓库自己的 CI 在构建时把二进制放进 ./files/aether-dns（不在 git 里），走本地文件；
-#  - 外部构建（如固件 feed）没有该文件，从已发布的 ipk 下载并解出二进制，按架构校验 sha256。
-# 这样 feed 的 commit 就同时固定了打包脚本与二进制版本，不需要在别处再钉一次。
-LOCAL_BINARY:=$(wildcard ./files/aether-dns)
-ifeq ($(LOCAL_BINARY),)
-PKG_SOURCE:=aether-dns_$(PKG_VERSION)-r$(PKG_RELEASE)_$(ARCH).ipk
-PKG_SOURCE_URL:=https://github.com/leochien0102/aether-dns/releases/download/v$(PKG_VERSION)/
-ifeq ($(ARCH),aarch64_generic)
-PKG_HASH:=1dbc307cce8b1f1e35035e5ff61b84d30c60da8cced0c9f49f715d433e6de6a7
-else ifeq ($(ARCH),x86_64)
-PKG_HASH:=f0a526775eed5d8ee1e27fd1f755784fbd19abef0f69f9dfed00ef214a337da4
-else
-# 其它架构由 DEPENDS 挡在门外；留空哈希让构建阶段报错，避免解析阶段中断 feed 索引。
-PKG_HASH:=
-endif
-endif
+# 本目录只服务 DNS 仓库自己的 CI 打包，输入为 ./files/aether-dns。
+# feeds 打包已移到 aether-proxy 仓库的 aether-dns/Makefile，下载 Release 裸二进制。
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -47,19 +32,10 @@ define Package/aether-dns/description
   Packages a prebuilt static musl aether-dns binary.
 endef
 
-ifeq ($(LOCAL_BINARY),)
-define Build/Prepare
-	$(INSTALL_DIR) $(PKG_BUILD_DIR)
-	tar -xzf $(DL_DIR)/$(PKG_SOURCE) -C $(PKG_BUILD_DIR)
-	tar -xzf $(PKG_BUILD_DIR)/data.tar.gz -C $(PKG_BUILD_DIR)
-	mv $(PKG_BUILD_DIR)/usr/bin/aether-dns $(PKG_BUILD_DIR)/aether-dns
-endef
-else
 define Build/Prepare
 	$(INSTALL_DIR) $(PKG_BUILD_DIR)
 	$(CP) ./files/aether-dns $(PKG_BUILD_DIR)/aether-dns
 endef
-endif
 
 define Build/Compile
 endef
