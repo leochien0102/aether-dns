@@ -41,6 +41,6 @@
 
 测试侧由 `tests/common/mod.rs` 的 `Server` 同时捕获两个流：`info`（stdout）用于就绪/生命周期断言，`errors`（stderr）用于错误断言；`tests/log_streams.rs` 是这条约定的回归测试。
 
-当前状态（2026-11-13）：**1.0.1 已公开发布**（tag `v1.0.1`，四个静态 musl 资产 + `SHA256SUMS`）（tag `v1.0.0`，四个静态 musl 资产 + `SHA256SUMS`，仓库 public）。尚未部署到任何设备，H28K 仍是 `2026.11.04-1`；proxy 按引擎闸门未落地前禁止部署 1.0.0。M4-07测试修复、M4-01缓存刷新、M4-03版本迁移、M4-08日志可诊断性、M4-09包定义、M4-10发布流水线、M4-11日志流优先级均已合并验收。
-启动期解环、owned readiness、handoff及init契约已由aether-proxy后续T15系列交付并发布r7，不重做S15.2探针；命名、中断体验和其他parity仍按候选分别决策。独立semver已在DNS仓库落地；打包及proxy按引擎版本闸门另卡处理，闸门拆分前不得部署 `1.0.0`。Cargo版本、二进制版本和设备opkg版本不能混为同号发行，详见[独立交接](docs/handoffs/session-handoff-20261109.md)。
+当前状态（2026-11-14）：**1.0.2 发布准备**：Cargo 与 `-V` 核心统一为 `1.0.2`，OpenWrt 包版本为 `1.0.2-r1`；版本守卫见 `tests/ci/check-version.sh`。Release 预期为四个静态 musl ipk/apk 包 + 两个无扩展名裸二进制（`aether-dns-1.0.2-r1-aarch64_generic` / `aether-dns-1.0.2-r1-x86_64`）+ `SHA256SUMS`。**tag `v1.0.2`、CI 产物哈希与 Release 发布待设计负责人执行并回填，尚未发布 1.0.2**。此前 `v1.0.0`、`v1.0.1` 已公开发布（各四包 + `SHA256SUMS`）。尚未部署新版本到设备，H28K 最后记录仍是 `2026.11.04-1`。M4-07测试修复、M4-01缓存刷新、M4-03版本迁移、M4-08日志可诊断性、M4-09包定义、M4-10发布流水线、M4-11日志流优先级均已合并验收。
+启动期解环、owned readiness、handoff及init契约已由aether-proxy后续T15系列交付并发布r7，不重做S15.2探针；命名、中断体验和其他parity仍按候选分别决策。独立semver已在DNS仓库落地；打包及proxy按引擎版本闸门另卡处理，闸门拆分前不得部署 `1.0.0`。仓库 Cargo/二进制核心与包核心由守卫保持一致；设备已装版本不随源码或发布自动升级，详见[独立交接](docs/handoffs/session-handoff-20261109.md)。
 M3 的安装/切换/回滚/模式/T级/短时观察结果见 [M3-REPORT.md](M3-REPORT.md)。

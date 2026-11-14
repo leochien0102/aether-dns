@@ -67,6 +67,7 @@ jobs:
             version=$(binary/aether-dns -V)
           fi
           echo "$version"
+          sh tests/ci/check-version.sh "$version"
           expected="aether-dns $(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n1)"
           [[ "$version" == "$expected" ]]
       - uses: actions/upload-artifact@v4.6.2
@@ -164,10 +165,39 @@ jobs:
           pattern: package-*
           merge-multiple: true
           path: assets
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          pattern: binary-*
+          path: binaries
+      - name: Prepare and check raw binary assets
+        run: |
+          set -euo pipefail
+          sh tests/ci/check-version.sh
+          ver=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n1)
+          rel=$(sed -n 's/^PKG_RELEASE:=//p' openwrt/Makefile | head -n1)
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+          for arch in aarch64_generic x86_64; do
+            binary="assets/aether-dns-${ver}-r${rel}-${arch}"
+            cp "binaries/binary-$arch/aether-dns" "$binary"
+            chmod 0755 "$binary"
+            file "$binary" | tee raw-file.txt
+            grep -F 'statically linked' raw-file.txt
+            readelf -d "$binary" | tee raw-dynamic.txt
+            ! grep -q NEEDED raw-dynamic.txt
+            if [[ "$arch" == aarch64_generic ]]; then
+              version=$(qemu-aarch64-static "$binary" -V)
+            else
+              version=$("$binary" -V)
+            fi
+            echo "$version"
+            sh tests/ci/check-version.sh "$version"
+          done
       - name: Generate and verify checksum manifest and metadata
         run: |
           set -euo pipefail
-          (cd assets && sha256sum aether-dns_*.ipk aether-dns-*.apk > SHA256SUMS)
+          (cd assets && sha256sum aether-dns_*.ipk aether-dns-*.apk \
+            aether-dns-*-aarch64_generic aether-dns-*-x86_64 > SHA256SUMS)
           sh tests/ci/verify-assets.sh assets
       - name: Install a matching apk tool
         run: |
@@ -239,10 +269,14 @@ jobs:
             expected="aether-dns $(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n1)"
           [[ "$version" == "$expected" ]]
           done
+      # Artifact transport normalizes file modes; tar preserves the validated 0755
+      # raw binaries between jobs. This archive is not a Release asset.
+      - name: Preserve release asset permissions for transport
+        run: tar -cf release-assets.tar -C assets .
       - uses: actions/upload-artifact@v4.6.2
         with:
           name: release-assets
-          path: assets/*
+          path: release-assets.tar
           if-no-files-found: error
 
   release:
@@ -264,7 +298,11 @@ jobs:
       - uses: actions/download-artifact@v4.3.0
         with:
           name: release-assets
-          path: assets
+          path: transport
+      - name: Restore release asset permissions
+        run: |
+          mkdir -p assets
+          tar -xf transport/release-assets.tar -C assets
       - name: Verify assets again
         run: sh tests/ci/verify-assets.sh assets
       - name: Refuse retransmission and publish in fixed order
@@ -283,8 +321,10 @@ jobs:
           printf '# aether-dns %s\n\nStatic musl packages for OpenWrt 24.10 (ipk) and 25.12 (apk).\nVerify SHA256SUMS before installing.\n' "${TAG#v}" > release-notes.md
           gh release create "$TAG" --verify-tag --notes-file release-notes.md
           shopt -s nullglob
-          files=(assets/aether-dns_*_*.ipk assets/aether-dns-*_*.apk assets/SHA256SUMS)
-          [[ ${#files[@]} == 5 ]] || { echo 'unexpected release asset count' >&2; exit 1; }
+          files=(assets/aether-dns_*_aarch64_generic.ipk assets/aether-dns_*_x86_64.ipk
+                 assets/aether-dns-*_aarch64_generic.apk assets/aether-dns-*_x86_64.apk
+                 assets/aether-dns-*-aarch64_generic assets/aether-dns-*-x86_64 assets/SHA256SUMS)
+          [[ ${#files[@]} == 7 ]] || { echo 'unexpected release asset count' >&2; exit 1; }
           for asset in "${files[@]}"; do
             gh release upload "$TAG" "$asset"
           done

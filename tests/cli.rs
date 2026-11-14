@@ -37,7 +37,7 @@ fn cli_version_passes_proxy_minimum() {
             env!("CARGO_PKG_VERSION"),
             "banner matches crate version"
         );
-        assert_eq!(version, "1.0.0", "migration target is 1.0.0");
+        assert_eq!(version, "1.0.2", "migration target is 1.0.2");
         assert_eq!(
             banner.lines().next(),
             Some(concat!("aether-dns ", env!("CARGO_PKG_VERSION")))
