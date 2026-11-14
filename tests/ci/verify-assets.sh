@@ -10,6 +10,7 @@ cd "${1:?usage: verify-assets.sh ASSET_DIRECTORY}"
 python3 - <<'PY'
 import pathlib
 import re
+import stat
 import subprocess
 
 
@@ -55,8 +56,10 @@ for path in binaries:
     match = BINARY_RE.fullmatch(path.name)
     require(match is not None, f'Invalid raw binary filename: {path.name}')
     version, arch = match.groups()
-    require(path.stat().st_mode & 0o755 == 0o755,
-            f'Raw binary must have 0755 permission bits: {path.name}')
+    # & binds more tightly than ==; masking with 0o755 means "at least",
+    # not exactly 0755. S_IMODE retains extra permission and special bits.
+    require(stat.S_IMODE(path.stat().st_mode) == 0o755,
+            f'Raw binary must have exactly 0755: {path.name}')
     binary_versions[arch] = version
 require(set(binary_versions) == set(ARCHES),
         'Raw binary set mismatch (both architectures required)')

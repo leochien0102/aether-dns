@@ -199,6 +199,8 @@ jobs:
           (cd assets && sha256sum aether-dns_*.ipk aether-dns-*.apk \
             aether-dns-*-aarch64_generic aether-dns-*-x86_64 > SHA256SUMS)
           sh tests/ci/verify-assets.sh assets
+      - name: Self-test the asset checker
+        run: sh tests/ci/verify-assets-selftest.sh assets
       - name: Install a matching apk tool
         run: |
           set -euo pipefail
