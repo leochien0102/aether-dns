@@ -69,10 +69,16 @@ proxy已正式发布0.6.3-r7，默认包依赖仍是aether-xray＋chinadns-ng，
 
 ## 6. 待决策，而非已冻结任务
 
-1. M4-03若要迁移，先由用户定独立首个x.y.z号，不与proxy同号；必须同步二进制版本、包、Cargo/测试/文档及消费者兼容策略。日期2026.11.04到较小semver的opkg排序/升级路径未决，不能擅自force-downgrade或卸载重装；Cargo现0.1.0不是迁移已完成。
-2. 需要公开独立发布时，用户先明确远端、版本和打包/分发方案；当前无remote不是授权自动建GitHub仓库或挪用proxy-channel/签名密钥。
+1. ~~M4-03 版本迁移~~：**已完成**（`1.0.0` → `1.0.1` → `1.0.2`，当前 tag `v1.0.2`；Cargo 版本、`-V` 核心、包版本由 `tests/ci/check-version.sh` 守卫）。日期版本到 semver 的 opkg 排序问题随一次性手动重装解决，不再适用。
+2. ~~公开独立发布~~：**已完成**（`leochien0102/aether-dns` 自 2026-11-11 起 public；CI 由 tag 触发；同一 tag 的 Release 资产重传会被拒绝）。远端与签名仍归本仓库自管，不挪用 proxy-channel 的密钥或仓库。
 3. 本体其他候选见[M4](../tasks/m4.md)。一次只冻结一个有量化目标的切片；DoT、负缓存、question匹配、TCP连接上限等不合并成一次大改。按章程先登记并批准improve/differ。
 4. M4-02/06等proxy候选转其独立对话；跨项目接口先只读评估并由用户确认双方分工，不默认同时改两库。
+5. **下一张 DNS 发布卡必须包含**（2026-11-14 复核，按所有者决定不返工 1.0.2）：
+   `tests/ci/verify-assets.sh` 的裸二进制权限断言改为 `stat.S_IMODE(path.stat().st_mode) == 0o755`；
+   负向用例补 `0777` 与 `02755` 各一条。
+   背景：现有 `path.stat().st_mode & 0o755 == 0o755` **不是**优先级 bug（Python 的 `&` 高于 `==`，
+   实际是 `(st_mode & 0o755) == 0o755`），语义为"至少满足 rwxr-xr-x"；因此 `0777`、`02755`、`04755`
+   这类多余位会通过。`S_IMODE` 掩到 `0o7777`，可挡住 setuid/setgid/sticky 与世界可写。
 
 ## 7. 网络观察与测试资源
 
