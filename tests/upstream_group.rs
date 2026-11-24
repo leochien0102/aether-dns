@@ -799,3 +799,46 @@ async fn only_rcode_parse_error_returns_err_not_bad_packet() {
     assert_eq!(tc_res, tc_wire);
     assert!(timeout(Duration::from_secs(1), tw).await.unwrap().unwrap());
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn truncated_after_complete_opt_keeps_extended_rcode_badvers() {
+    // TC=1, low RCODE=0, ARCOUNT=2: first additional RR is a complete OPT with ext_rcode=1 (BADVERS=16),
+    // followed by a truncated second additional RR.
+    let mut tc_badvers_truncated_tail = wire_reply(0, None, Some(1));
+    tc_badvers_truncated_tail[2] |= 0x02; // TC=1
+    tc_badvers_truncated_tail[11] = 2; // ARCOUNT=2
+    // Truncated second additional RR (name + partial header, cut off before RDLEN/RDATA).
+    tc_badvers_truncated_tail.extend_from_slice(&[0xc0, 12, 0, 1, 0, 1]);
+
+    // Direct rcode check: must still recognize 16 (BADVERS), not downgrade to 0.
+    assert_eq!(dns::rcode(&tc_badvers_truncated_tail), Ok(16));
+
+    // In-group race: must NOT beat a slower valid NOERROR.
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let noerror = wire_reply(0, Some(3), Some(0));
+    let (u0, w0) = controlled_tcp_peer(
+        barrier.clone(),
+        None,
+        Some(tx),
+        ControlledReply::Wire(tc_badvers_truncated_tail),
+    )
+    .await;
+    let (u1, w1) = controlled_tcp_peer(
+        barrier,
+        Some(rx),
+        None,
+        ControlledReply::Wire(noerror.clone()),
+    )
+    .await;
+    let result = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("must finish promptly")
+    .expect("NOERROR must win over TC=1 BADVERS with truncated trailing additional RR");
+    assert_eq!(result, noerror);
+    assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+}
