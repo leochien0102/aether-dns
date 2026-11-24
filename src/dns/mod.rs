@@ -134,6 +134,8 @@ pub fn truncate_additional(wire: &mut Vec<u8>) -> Result<(), WireError> {
 
 /// Full 12-bit RCODE, combining the header's low 4 bits with any EDNS0 OPT
 /// extended-RCODE byte in the additional section (RFC 6891 section 6.1.3).
+/// Legal truncated replies (`TC=1`) fall back to the header's low 4 bits when
+/// truncation cuts off the additional section.
 pub fn rcode(wire: &[u8]) -> Result<u16, WireError> {
     if wire.len() < 12 {
         return Err(WireError);
@@ -143,20 +145,28 @@ pub fn rcode(wire: &[u8]) -> Result<u16, WireError> {
     if additional == 0 {
         return Ok(low);
     }
-    let mut at = cut_additional(wire)?;
-    let mut extended = 0u8;
-    for _ in 0..additional {
-        let fields = skip_name(wire, at)?;
-        let end = skip_rr(wire, at)?;
-        if word(wire, fields)? == 41 {
-            let high = *wire.get(fields + 4).ok_or(WireError)?;
-            if extended == 0 {
-                extended = high;
+    let truncated = wire[2] & 0x02 != 0;
+    let parse_extended = || -> Result<u8, WireError> {
+        let mut at = cut_additional(wire)?;
+        let mut extended = 0u8;
+        for _ in 0..additional {
+            let fields = skip_name(wire, at)?;
+            let end = skip_rr(wire, at)?;
+            if word(wire, fields)? == 41 {
+                let high = *wire.get(fields + 4).ok_or(WireError)?;
+                if extended == 0 {
+                    extended = high;
+                }
             }
+            at = end;
         }
-        at = end;
+        Ok(extended)
+    };
+    match parse_extended() {
+        Ok(extended) => Ok((u16::from(extended) << 4) | low),
+        Err(_) if truncated => Ok(low),
+        Err(err) => Err(err),
     }
-    Ok((u16::from(extended) << 4) | low)
 }
 
 pub fn set_id(wire: &mut [u8], id: u16) -> Result<(), WireError> {

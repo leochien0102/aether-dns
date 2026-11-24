@@ -5,10 +5,6 @@ use std::future::{Future, poll_fn};
 use std::io;
 use std::task::Poll;
 
-fn is_usable_reply(response: &[u8]) -> bool {
-    matches!(dns::rcode(response), Ok(0 | 3))
-}
-
 /// Race one exchange per upstream, preserving the single-upstream validation,
 /// protocol selection and timeout. Dropping this future also cancels the group.
 ///
@@ -16,7 +12,8 @@ fn is_usable_reply(response: &[u8]) -> bool {
 /// response (NOERROR or NXDOMAIN) drops every remaining future and its
 /// socket/connection immediately. Validated DNS error replies are retained as
 /// fallback so a fast SERVFAIL/REFUSED/extended error does not mask a slower
-/// usable reply.
+/// usable reply, while RCODE parse failures are recorded per upstream instead
+/// of occupying the DNS error fallback slot.
 pub async fn exchange(
     upstreams: &[Upstream],
     query: &[u8],
@@ -46,11 +43,22 @@ pub async fn exchange(
         while index < pending.len() {
             match pending[index].1.as_mut().poll(cx) {
                 Poll::Ready(Ok(response)) => {
+                    let upstream_index = pending[index].0;
                     drop(pending.swap_remove(index));
-                    if is_usable_reply(&response) {
-                        return Poll::Ready(Ok(response));
+                    match dns::rcode(&response) {
+                        Ok(0 | 3) => return Poll::Ready(Ok(response)),
+                        Ok(_) => {
+                            fallback_response.get_or_insert(response);
+                        }
+                        Err(_) => {
+                            let error = io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "invalid DNS wire response",
+                            );
+                            last_error_kind = Some(error.kind());
+                            errors[upstream_index] = Some(error);
+                        }
                     }
-                    fallback_response.get_or_insert(response);
                 }
                 Poll::Ready(Err(error)) => {
                     last_error_kind = Some(error.kind());

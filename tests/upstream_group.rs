@@ -675,3 +675,127 @@ async fn all_io_failures_keeps_aggregated_io_error() {
     assert!(!timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
     assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
 }
+
+fn rcode_parse_error_wire() -> Vec<u8> {
+    // Passes upstream::valid_reply (len>=12, ID match, QR=1, QDCOUNT=1) with TC=0,
+    // but claims ARCOUNT=1 without any additional RR bytes so dns::rcode() returns Err.
+    let mut wire = QUERY.to_vec();
+    wire[2] = 0x81;
+    wire[3] = 0x80;
+    wire[11] = 1;
+    wire
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn rcode_parse_error_does_not_occupy_fallback_before_refused() {
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let bad_wire = rcode_parse_error_wire();
+    let refused = wire_reply(5, None, None);
+    let (u0, w0) = controlled_tcp_peer(
+        barrier.clone(),
+        None,
+        Some(tx),
+        ControlledReply::Wire(bad_wire),
+    )
+    .await;
+    let (u1, w1) = controlled_tcp_peer(
+        barrier,
+        Some(rx),
+        None,
+        ControlledReply::Wire(refused.clone()),
+    )
+    .await;
+    let result = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("must finish promptly")
+    .expect("legal REFUSED must win over earlier RCODE parse error");
+    assert_eq!(
+        result, refused,
+        "RCODE parse error must not occupy the first DNS error fallback slot"
+    );
+    assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn only_rcode_parse_error_returns_err_not_bad_packet() {
+    // Case 1: RCODE parse error + I/O close -> aggregated Err naming both upstreams in order.
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let (u0, w0) = controlled_tcp_peer(
+        barrier.clone(),
+        None,
+        Some(tx),
+        ControlledReply::Wire(rcode_parse_error_wire()),
+    )
+    .await;
+    let (u1, w1) = controlled_tcp_peer(barrier, Some(rx), None, ControlledReply::Close).await;
+    let addr0 = format!("tcp://127.0.0.1:{}", u0.port.unwrap());
+    let addr1 = format!("tcp://127.0.0.1:{}", u1.port.unwrap());
+    let error = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("must finish promptly")
+    .expect_err("parse failure with no usable DNS reply must return Err");
+    let message = error.to_string();
+    assert!(message.starts_with("no upstream answered: "), "{message}");
+    let p0 = message
+        .find(&format!("{addr0}: invalid DNS wire response"))
+        .expect("parse-failed upstream must be named with parse error");
+    let p1 = message.find(&addr1).expect("closed upstream must be named");
+    assert!(p0 < p1, "configuration order preserved: {message}");
+    assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(!timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+
+    // Case 2: Single upstream with RCODE parse error -> Err(InvalidData), no extra wait.
+    let single_barrier = Arc::new(Barrier::new(1));
+    let (su, sw) = controlled_tcp_peer(
+        single_barrier,
+        None,
+        None,
+        ControlledReply::Wire(rcode_parse_error_wire()),
+    )
+    .await;
+    let saddr = format!("tcp://127.0.0.1:{}", su.port.unwrap());
+    let serr = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[su], QUERY, Tcp),
+    )
+    .await
+    .expect("single parse error must finish immediately")
+    .expect_err("single parse failure must return Err");
+    assert_eq!(serr.kind(), std::io::ErrorKind::InvalidData);
+    assert!(
+        serr.to_string()
+            .contains(&format!("{saddr}: invalid DNS wire response")),
+        "{serr}"
+    );
+    assert!(timeout(Duration::from_secs(1), sw).await.unwrap().unwrap());
+
+    // Case 3: Legal truncated reply (TC=1) with ARCOUNT=1 cut off before OPT still returns Ok.
+    let tc_barrier = Arc::new(Barrier::new(1));
+    let mut tc_wire = rcode_parse_error_wire();
+    tc_wire[2] |= 0x02; // TC=1
+    let (tu, tw) = controlled_tcp_peer(
+        tc_barrier,
+        None,
+        None,
+        ControlledReply::Wire(tc_wire.clone()),
+    )
+    .await;
+    let tc_res = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[tu], QUERY, Tcp),
+    )
+    .await
+    .expect("truncated reply must finish immediately")
+    .expect("legal TC=1 reply must preserve Ok contract");
+    assert_eq!(tc_res, tc_wire);
+    assert!(timeout(Duration::from_secs(1), tw).await.unwrap().unwrap());
+}
