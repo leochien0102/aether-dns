@@ -27,7 +27,13 @@ struct Entry {
     ttl: u32,
     offsets: Vec<usize>,
     used: u128,
-    retry_after: Duration,
+    last_failure: Option<Duration>,
+}
+
+enum Lifetime {
+    Fresh { elapsed: Duration, ttl: Duration },
+    Stale,
+    Expired,
 }
 
 pub struct Cache {
@@ -51,18 +57,29 @@ impl Cache {
         }
     }
 
+    fn lifetime(&self, entry: &Entry, now: Duration) -> Lifetime {
+        let elapsed = now.saturating_sub(entry.written);
+        let ttl = Duration::from_secs(u64::from(entry.ttl));
+        if elapsed < ttl {
+            Lifetime::Fresh { elapsed, ttl }
+        } else if elapsed - ttl < Duration::from_secs(self.stale) {
+            Lifetime::Stale
+        } else {
+            Lifetime::Expired
+        }
+    }
+
     pub fn get(&mut self, query: &[u8], now: Duration) -> Option<Vec<u8>> {
         let key = question(query)?;
         let entry = self.entries.get(key)?;
-        let elapsed = now.saturating_sub(entry.written);
-        let fresh = elapsed < Duration::from_secs(u64::from(entry.ttl));
-        if !fresh
-            && (self.stale == 0
-                || elapsed >= Duration::from_secs(u64::from(entry.ttl).saturating_add(self.stale)))
-        {
-            self.remove(key);
-            return None;
-        }
+        let fresh_elapsed = match self.lifetime(entry, now) {
+            Lifetime::Fresh { elapsed, .. } => Some(elapsed),
+            Lifetime::Stale => None,
+            Lifetime::Expired => {
+                self.remove(key);
+                return None;
+            }
+        };
         let entry = self.entries.get_mut(key)?;
         self.lru.remove(&(entry.used, key.to_vec()));
         self.sequence += 1;
@@ -71,10 +88,11 @@ impl Cache {
         let mut response = entry.response.clone();
         for &at in &entry.offsets {
             let original = u32::from_be_bytes(response[at..at + 4].try_into().ok()?);
-            let ttl = if fresh {
-                original.saturating_sub(elapsed.as_secs().min(u64::from(u32::MAX)) as u32)
-            } else {
-                0
+            let ttl = match fresh_elapsed {
+                Some(elapsed) => {
+                    original.saturating_sub(elapsed.as_secs().min(u64::from(u32::MAX)) as u32)
+                }
+                None => 0,
             };
             response[at..at + 4].copy_from_slice(&ttl.to_be_bytes());
         }
@@ -94,17 +112,17 @@ impl Cache {
         let Some(entry) = self.entries.get(key) else {
             return false;
         };
-        let elapsed = now.saturating_sub(entry.written);
-        let ttl = Duration::from_secs(u64::from(entry.ttl));
-        let stale = elapsed >= ttl;
-        let eligible = if stale {
-            self.stale > 0 && elapsed < ttl + Duration::from_secs(self.stale)
-        } else {
-            entry.ttl >= 10 && ttl - elapsed <= ttl / 3
+        let eligible = match self.lifetime(entry, now) {
+            Lifetime::Fresh { elapsed, ttl } => entry.ttl >= 10 && ttl - elapsed <= ttl / 3,
+            Lifetime::Stale => true,
+            Lifetime::Expired => false,
         };
+        let cooling_down = entry
+            .last_failure
+            .is_some_and(|at| now.saturating_sub(at) < Duration::from_secs(5));
         if self.capacity == 0
             || !eligible
-            || now < entry.retry_after
+            || cooling_down
             || self.refreshing.len() >= 4
             || self.refreshing.contains(key)
         {
@@ -121,7 +139,7 @@ impl Cache {
         }
         let accepted = response.is_some_and(|response| self.add(query, response, now));
         if !accepted && let Some(entry) = self.entries.get_mut(key) {
-            entry.retry_after = now + Duration::from_secs(5);
+            entry.last_failure = Some(now);
         }
     }
 
@@ -146,6 +164,10 @@ impl Cache {
         let Some((ttl, offsets)) = ttl_fields(response) else {
             return false;
         };
+        if ttl == 0 {
+            self.remove(key);
+            return false;
+        }
         let mut response = response.to_vec();
         if dns::set_id(&mut response, 0).is_err() {
             return false;
@@ -166,7 +188,7 @@ impl Cache {
                 ttl,
                 offsets,
                 used: self.sequence,
-                retry_after: Duration::ZERO,
+                last_failure: None,
             },
         );
         true

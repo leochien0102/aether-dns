@@ -388,6 +388,146 @@ fn rejected_refresh_replies_never_overwrite_old_entry() {
     }
 }
 
+fn reply_with_ttls(q: &[u8], answer_ttls: &[u32], authority_ttl: Option<u32>, opt_ttl: Option<u32>) -> Vec<u8> {
+    let mut r = q.to_vec();
+    r[2] = 0x81;
+    r[3] = 0x80;
+    r[7] = answer_ttls.len() as u8;
+    for (i, &ttl) in answer_ttls.iter().enumerate() {
+        rr(&mut r, 1, ttl, &[1, 2, 3, (i + 1) as u8]);
+    }
+    if let Some(ttl) = authority_ttl {
+        r[9] = 1;
+        rr(&mut r, 16, ttl, &[1, b'z']);
+    }
+    if let Some(pseudo_ttl) = opt_ttl {
+        r[11] = 1;
+        r.extend_from_slice(&[0, 0, 41, 2, 0]);
+        r.extend_from_slice(&pseudo_ttl.to_be_bytes());
+        r.extend_from_slice(&[0, 0]);
+    }
+    r
+}
+
+#[test]
+fn zero_ttl_single_and_multi_answer_are_never_cached() {
+    let q = query(b'x', 1, 1, 42);
+    for answer_ttls in [&[0u32][..], &[30, 0][..], &[0, 30][..]] {
+        let mut cache = server::cache::Cache::new(Some(8), Some(30));
+        let r = reply_with_ttls(&q, answer_ttls, Some(50), None);
+        assert!(!cache.add(&q, &r, Duration::ZERO));
+        assert!(cache.get(&q, Duration::ZERO).is_none());
+        assert!(!cache.begin_refresh(&q, Duration::ZERO));
+    }
+
+    // CNAME(TTL=0) + A(TTL=30): minimum answer TTL is 0, so must not be cached.
+    let mut cname_zero = q.clone();
+    cname_zero[2] = 0x81;
+    cname_zero[3] = 0x80;
+    cname_zero[7] = 2;
+    rr(&mut cname_zero, 5, 0, &[1, b'y', 0]);
+    rr(&mut cname_zero, 1, 30, &[1, 2, 3, 4]);
+    let mut cache = server::cache::Cache::new(Some(8), Some(30));
+    assert!(!cache.add(&q, &cname_zero, Duration::ZERO));
+    assert!(cache.get(&q, Duration::ZERO).is_none());
+    assert!(!cache.begin_refresh(&q, Duration::ZERO));
+}
+
+#[test]
+fn opt_pseudo_ttl_zero_is_not_treated_as_answer_ttl() {
+    let q = query(b'x', 1, 1, 42);
+    let r = reply_with_ttls(&q, &[10], Some(0), Some(0));
+    let mut cache = server::cache::Cache::new(Some(8), Some(5));
+    assert!(cache.add(&q, &r, Duration::ZERO));
+    assert_eq!(ttls(&cache.get(&q, Duration::from_secs(4)).unwrap()), &[6, 0]);
+    assert!(!cache.begin_refresh(&q, Duration::from_secs(4)));
+    assert_eq!(ttls(&cache.get(&q, Duration::from_secs(10)).unwrap()), &[0, 0]);
+    assert!(cache.begin_refresh(&q, Duration::from_secs(10)));
+}
+
+#[test]
+fn zero_ttl_refresh_evicts_existing_entry_while_invalid_or_timeout_preserves_it() {
+    // Valid TTL=0 refresh (single answer and multi-answer min TTL=0) must evict old entry.
+    for answer_ttls in [&[0u32][..], &[30, 0][..]] {
+        let (mut cache, clock, q) = unit_cache(20, 10);
+        clock.at(10000);
+        assert!(cache.get(&q, clock.now()).is_some());
+        assert!(cache.begin_refresh(&q, clock.now()));
+        let r = reply_with_ttls(&q, answer_ttls, None, None);
+        cache.finish_refresh(&q, Some(&r), clock.now());
+        assert!(cache.get(&q, clock.now()).is_none());
+        assert!(!cache.begin_refresh(&q, clock.now()));
+    }
+
+    // Direct add of valid TTL=0 over an existing entry must also evict it.
+    let (mut cache, clock, q_existing) = unit_cache(20, 10);
+    let zero_reply = reply_with_ttls(&q_existing, &[0], None, None);
+    assert!(!cache.add(&q_existing, &zero_reply, clock.now()));
+    assert!(cache.get(&q_existing, clock.now()).is_none());
+    assert!(!cache.begin_refresh(&q_existing, clock.now()));
+
+    // Timeout (None) and malformed wire bytes must preserve old entry and apply 5s cooldown.
+    for invalid in [None, Some(&[0u8, 1, 2][..])] {
+        let (mut cache, clock, q_inv) = unit_cache(20, 10);
+        clock.at(10000);
+        let before = cache.get(&q_inv, clock.now()).unwrap();
+        assert!(cache.begin_refresh(&q_inv, clock.now()));
+        cache.finish_refresh(&q_inv, invalid, clock.now());
+        assert_eq!(cache.get(&q_inv, clock.now()).unwrap(), before);
+        clock.at(14999);
+        assert!(!cache.begin_refresh(&q_inv, clock.now()));
+        clock.at(15000);
+        assert!(cache.begin_refresh(&q_inv, clock.now()));
+    }
+}
+
+#[test]
+fn extreme_stale_window_lookup_and_refresh_boundaries_never_overflow() {
+    for stale in [u64::MAX, u64::MAX - 5] {
+        let (mut cache, _clock, q) = unit_cache(stale, 10);
+        let t_stale_start = Duration::from_secs(10);
+        assert_eq!(ttls(&cache.get(&q, t_stale_start).unwrap()), &[0, 0, 0]);
+        assert!(cache.begin_refresh(&q, t_stale_start));
+        cache.finish_refresh(&q, None, t_stale_start);
+
+        // Even at Duration::MAX, elapsed (u64::MAX + 0.999999999s) - 10s < stale.
+        assert_eq!(ttls(&cache.get(&q, Duration::MAX).unwrap()), &[0, 0, 0]);
+        assert!(cache.begin_refresh(&q, Duration::MAX));
+    }
+
+    // Exact expiry boundary at u64::MAX seconds when ttl + stale == u64::MAX.
+    let (mut cache, _clock, q) = unit_cache(u64::MAX - 10, 10);
+    let just_before = Duration::new(u64::MAX - 1, 999_999_999);
+    assert_eq!(ttls(&cache.get(&q, just_before).unwrap()), &[0, 0, 0]);
+    assert!(cache.begin_refresh(&q, just_before));
+    cache.finish_refresh(&q, None, just_before);
+
+    let exact_end = Duration::from_secs(u64::MAX);
+    assert!(cache.get(&q, exact_end).is_none());
+    assert!(!cache.begin_refresh(&q, exact_end));
+}
+
+#[test]
+fn retry_after_near_duration_max_never_overflows_and_keeps_cooldown() {
+    let (mut cache, _clock, q) = unit_cache(u64::MAX, 10);
+    let fail_at = Duration::MAX - Duration::from_secs(2);
+    assert_eq!(ttls(&cache.get(&q, fail_at).unwrap()), &[0, 0, 0]);
+    assert!(cache.begin_refresh(&q, fail_at));
+    cache.finish_refresh(&q, None, fail_at);
+    // Still within 5s cooldown at fail_at and at Duration::MAX (only 2s later).
+    assert_eq!(ttls(&cache.get(&q, Duration::MAX).unwrap()), &[0, 0, 0]);
+    assert!(!cache.begin_refresh(&q, fail_at));
+    assert!(!cache.begin_refresh(&q, Duration::MAX));
+
+    // Exact 5s boundary ending at Duration::MAX.
+    let (mut cache, _clock, q) = unit_cache(u64::MAX, 10);
+    let fail_at = Duration::MAX - Duration::from_secs(5);
+    assert!(cache.begin_refresh(&q, fail_at));
+    cache.finish_refresh(&q, None, fail_at);
+    assert!(!cache.begin_refresh(&q, Duration::MAX - Duration::from_nanos(1)));
+    assert!(cache.begin_refresh(&q, Duration::MAX));
+}
+
 #[tokio::test]
 async fn hit_restores_id_and_normalization() {
     let h = standard(5).await;

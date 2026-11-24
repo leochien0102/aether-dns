@@ -282,3 +282,95 @@ async fn at_most_four_distinct_keys_refresh_concurrently() {
     assert_eq!(h.hits.load(Ordering::SeqCst), 10);
     h.stop().await;
 }
+
+fn response_with_ip(q: &[u8], ttl: u32, code: u8, ip: [u8; 4]) -> Vec<u8> {
+    let mut r = q.to_vec();
+    r[2] = 0x81;
+    r[3] = 0x80 | code;
+    r[7] = 1;
+    r.extend_from_slice(&[0xc0, 12, 0, 1, 0, 1]);
+    r.extend_from_slice(&ttl.to_be_bytes());
+    r.extend_from_slice(&[0, 4]);
+    r.extend_from_slice(&ip);
+    r
+}
+
+fn first_ipv4(r: &[u8]) -> [u8; 4] {
+    use hickory_proto::rr::RData;
+    match hickory_proto::op::Message::from_vec(r).unwrap().answers()[0].data() {
+        RData::A(a) => a.0.octets(),
+        other => panic!("expected A record, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn zero_ttl_initial_answer_is_returned_but_not_cached() {
+    let mut h = Harness::new().await;
+    for (expected_hits, ip) in [(1, [10, 0, 0, 1]), (2, [10, 0, 0, 2])] {
+        let client = tokio::spawn(ask(h.port, b'z'));
+        let request = h.request().await;
+        h.socket
+            .send_to(&response_with_ip(&request.0, 0, 0, ip), request.1)
+            .await
+            .unwrap();
+        let reply = client.await.unwrap();
+        assert_eq!(ttl(&reply), 0);
+        assert_eq!(first_ipv4(&reply), ip);
+        assert_eq!(h.hits.load(Ordering::SeqCst), expected_hits);
+    }
+    h.stop().await;
+}
+
+#[tokio::test]
+async fn zero_ttl_refresh_evicts_old_entry_and_next_query_misses() {
+    let mut h = Harness::new().await;
+    h.prime(b'x').await;
+    h.clock.at(12000);
+    let stale_reply = ask(h.port, b'x').await;
+    assert_eq!(ttl(&stale_reply), 0);
+    assert_eq!(first_ipv4(&stale_reply), [1, 2, 3, 4]);
+
+    let refresh_req = h.request().await;
+    assert_eq!(h.hits.load(Ordering::SeqCst), 2);
+    h.socket
+        .send_to(
+            &response_with_ip(&refresh_req.0, 0, 0, [5, 6, 7, 8]),
+            refresh_req.1,
+        )
+        .await
+        .unwrap();
+
+    // Wait for finish_refresh to evict the old entry; a miss must reach upstream.
+    let (client, miss_req) = timeout(Duration::from_secs(2), async {
+        loop {
+            let mut client = tokio::spawn(ask(h.port, b'x'));
+            tokio::select! {
+                req = h.pending.recv() => break (client, req.unwrap()),
+                res = &mut client => {
+                    let reply = res.unwrap();
+                    assert_ne!(
+                        first_ipv4(&reply),
+                        [5, 6, 7, 8],
+                        "valid TTL=0 refresh reply must not be cached"
+                    );
+                    tokio::task::yield_now().await;
+                }
+            }
+        }
+    })
+    .await
+    .expect("old entry must be evicted after valid TTL=0 refresh");
+
+    assert_eq!(h.hits.load(Ordering::SeqCst), 3);
+    h.socket
+        .send_to(
+            &response_with_ip(&miss_req.0, 0, 0, [9, 10, 11, 12]),
+            miss_req.1,
+        )
+        .await
+        .unwrap();
+    let fresh_zero = client.await.unwrap();
+    assert_eq!(ttl(&fresh_zero), 0);
+    assert_eq!(first_ipv4(&fresh_zero), [9, 10, 11, 12]);
+    h.stop().await;
+}
