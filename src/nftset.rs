@@ -328,4 +328,104 @@ mod tests {
         .unwrap();
         assert_eq!(calls, 2);
     }
+
+    fn parse_nlattrs(mut bytes: &[u8]) -> Vec<(u16, &[u8])> {
+        let mut attrs = Vec::new();
+        while !bytes.is_empty() {
+            let len = u16::from_ne_bytes(bytes[..2].try_into().unwrap()) as usize;
+            let kind = u16::from_ne_bytes(bytes[2..4].try_into().unwrap());
+            attrs.push((kind, &bytes[4..len]));
+            bytes = &bytes[align(len)..];
+        }
+        attrs
+    }
+
+    fn decode_body_elements(encoded: &[u8]) -> Vec<(Ipv4Addr, bool)> {
+        let top = parse_nlattrs(encoded);
+        let list = top
+            .into_iter()
+            .find(|(kind, _)| *kind == (3 | NESTED))
+            .expect("NFTA_SET_ELEM_LIST_ELEMENTS present")
+            .1;
+        let mut decoded = Vec::new();
+        for (elem_kind, elem_body) in parse_nlattrs(list) {
+            assert_eq!(elem_kind, 1 | NESTED);
+            let mut key = None;
+            let mut end = false;
+            for (field_kind, field_body) in parse_nlattrs(elem_body) {
+                match field_kind {
+                    k if k == (1 | NESTED) => {
+                        let data = parse_nlattrs(field_body);
+                        assert_eq!(data.len(), 1);
+                        assert_eq!(data[0].0, 1 | 0x4000);
+                        let raw: [u8; 4] = data[0].1.try_into().unwrap();
+                        key = Some(Ipv4Addr::from(raw));
+                    }
+                    3 => {
+                        assert_eq!(field_body, 1u32.to_be_bytes());
+                        end = true;
+                    }
+                    other => panic!("unexpected element attribute {other:#x}"),
+                }
+            }
+            decoded.push((key.expect("element key present"), end));
+        }
+        decoded
+    }
+
+    #[test]
+    fn interval_encoding_for_max_prev_mixed_and_normal_batches() {
+        let set: SetName = "inet@t@s".parse().unwrap();
+        let ip = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+
+        // Single max IPv4: right endpoint wraps u32::MAX + 1 -> 0.0.0.0 with INTERVAL_END.
+        assert_eq!(
+            decode_body_elements(&body(&set, &[ip("255.255.255.255")], true).unwrap()),
+            vec![
+                (ip("255.255.255.255"), false),
+                (ip("0.0.0.0"), true),
+            ]
+        );
+
+        // Lookup (intervals = false) sends only the key without an interval-end sentinel.
+        assert_eq!(
+            decode_body_elements(&body(&set, &[ip("255.255.255.255")], false).unwrap()),
+            vec![(ip("255.255.255.255"), false)]
+        );
+
+        // Previous-to-max IPv4 ends at 255.255.255.255 without wrapping.
+        assert_eq!(
+            decode_body_elements(&body(&set, &[ip("255.255.255.254")], true).unwrap()),
+            vec![
+                (ip("255.255.255.254"), false),
+                (ip("255.255.255.255"), true),
+            ]
+        );
+
+        // Mixed batch preserves single-batch encoding for both max and normal addresses.
+        assert_eq!(
+            decode_body_elements(
+                &body(&set, &[ip("255.255.255.255"), ip("192.0.2.10")], true).unwrap()
+            ),
+            vec![
+                (ip("255.255.255.255"), false),
+                (ip("0.0.0.0"), true),
+                (ip("192.0.2.10"), false),
+                (ip("192.0.2.11"), true),
+            ]
+        );
+
+        // Normal batch encodes half-open [ip, ip + 1) pairs.
+        assert_eq!(
+            decode_body_elements(
+                &body(&set, &[ip("192.0.2.1"), ip("192.0.2.2")], true).unwrap()
+            ),
+            vec![
+                (ip("192.0.2.1"), false),
+                (ip("192.0.2.2"), true),
+                (ip("192.0.2.2"), false),
+                (ip("192.0.2.3"), true),
+            ]
+        );
+    }
 }
