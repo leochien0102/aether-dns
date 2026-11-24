@@ -132,6 +132,33 @@ pub fn truncate_additional(wire: &mut Vec<u8>) -> Result<(), WireError> {
     Ok(())
 }
 
+/// Full 12-bit RCODE, combining the header's low 4 bits with any EDNS0 OPT
+/// extended-RCODE byte in the additional section (RFC 6891 section 6.1.3).
+pub fn rcode(wire: &[u8]) -> Result<u16, WireError> {
+    if wire.len() < 12 {
+        return Err(WireError);
+    }
+    let low = u16::from(wire[3] & 0x0f);
+    let additional = word(wire, 10)?;
+    if additional == 0 {
+        return Ok(low);
+    }
+    let mut at = cut_additional(wire)?;
+    let mut extended = 0u8;
+    for _ in 0..additional {
+        let fields = skip_name(wire, at)?;
+        let end = skip_rr(wire, at)?;
+        if word(wire, fields)? == 41 {
+            let high = *wire.get(fields + 4).ok_or(WireError)?;
+            if extended == 0 {
+                extended = high;
+            }
+        }
+        at = end;
+    }
+    Ok((u16::from(extended) << 4) | low)
+}
+
 pub fn set_id(wire: &mut [u8], id: u16) -> Result<(), WireError> {
     wire.get_mut(..2)
         .ok_or(WireError)?

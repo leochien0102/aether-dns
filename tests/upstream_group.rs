@@ -1,6 +1,8 @@
 #[allow(dead_code)]
 #[path = "../src/config.rs"]
 mod config;
+#[path = "../src/dns/mod.rs"]
+mod dns;
 #[path = "../src/upstream.rs"]
 mod upstream;
 #[path = "../src/upstream_group.rs"]
@@ -12,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::sync::Barrier;
+use tokio::sync::{Barrier, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 
@@ -311,4 +313,365 @@ async fn failure_names_every_upstream() {
             .expect("silent connection cancelled")
             .unwrap()
     );
+}
+
+enum ControlledReply {
+    Wire(Vec<u8>),
+    Close,
+}
+
+fn wire_reply(rcode_low: u8, answer_ip: Option<u8>, ext_rcode: Option<u8>) -> Vec<u8> {
+    let mut wire = QUERY.to_vec();
+    wire[2] = 0x81;
+    wire[3] = 0x80 | (rcode_low & 0x0f);
+    if let Some(last_octet) = answer_ip {
+        wire[7] = 1;
+        wire.extend_from_slice(&[
+            0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 30, 0, 4, 10, 0, 0, last_octet,
+        ]);
+    }
+    if let Some(ext) = ext_rcode {
+        wire[11] = 1;
+        // EDNS0 OPT RR: root name (0), TYPE=41, UDP payload=1232, TTL=[ext, ver=0, flags=0, 0], RDLEN=0.
+        wire.extend_from_slice(&[0, 0, 41, 4, 208, ext, 0, 0, 0, 0, 0]);
+    }
+    wire
+}
+
+async fn controlled_tcp_peer(
+    barrier: Arc<Barrier>,
+    release: Option<oneshot::Receiver<()>>,
+    done: Option<oneshot::Sender<()>>,
+    reply: ControlledReply,
+) -> (Upstream, JoinHandle<bool>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let worker = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let len = stream.read_u16().await.unwrap();
+        let mut query = vec![0; len as usize];
+        stream.read_exact(&mut query).await.unwrap();
+        assert_eq!(query, QUERY);
+        barrier.wait().await;
+        let mut byte = [0];
+        if let Some(release) = release {
+            tokio::select! {
+                read = stream.read(&mut byte) => {
+                    assert_eq!(read.unwrap(), 0, "cancelled peer must observe EOF");
+                    return false;
+                }
+                res = release => {
+                    if res.is_err() {
+                        return false;
+                    }
+                }
+            }
+        }
+        let sent = match reply {
+            ControlledReply::Wire(wire) => {
+                if stream.write_u16(wire.len() as u16).await.is_err() {
+                    return false;
+                }
+                if stream.write_all(&wire).await.is_err() {
+                    return false;
+                }
+                // Wait until the client finishes reading and drops its stream.
+                let _ = stream.read(&mut byte).await;
+                true
+            }
+            ControlledReply::Close => {
+                drop(stream);
+                false
+            }
+        };
+        if let Some(done) = done {
+            let _ = done.send(());
+        }
+        sent
+    });
+    (
+        Upstream {
+            protocol: Some(Tcp),
+            host: None,
+            ip: "127.0.0.1".parse().unwrap(),
+            port: Some(port),
+        },
+        worker,
+    )
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn fast_servfail_then_slow_noerror_wins() {
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let servfail = wire_reply(2, None, None);
+    let noerror = wire_reply(0, Some(1), None);
+    let (u0, w0) = controlled_tcp_peer(
+        barrier.clone(),
+        None,
+        Some(tx),
+        ControlledReply::Wire(servfail),
+    )
+    .await;
+    let (u1, w1) = controlled_tcp_peer(
+        barrier,
+        Some(rx),
+        None,
+        ControlledReply::Wire(noerror.clone()),
+    )
+    .await;
+    let result = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("must finish without waiting for timeout")
+    .expect("NOERROR should win over earlier SERVFAIL");
+    assert_eq!(result, noerror);
+    assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn fast_error_then_slow_nxdomain_wins() {
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let refused = wire_reply(5, None, None);
+    let nxdomain = wire_reply(3, None, None);
+    let (u0, w0) = controlled_tcp_peer(
+        barrier.clone(),
+        None,
+        Some(tx),
+        ControlledReply::Wire(refused),
+    )
+    .await;
+    let (u1, w1) = controlled_tcp_peer(
+        barrier,
+        Some(rx),
+        None,
+        ControlledReply::Wire(nxdomain.clone()),
+    )
+    .await;
+    let result = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("must finish without waiting for timeout")
+    .expect("NXDOMAIN should win over earlier REFUSED");
+    assert_eq!(result, nxdomain);
+    assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn fast_extended_rcode_does_not_mask_slow_noerror() {
+    for (low, ext) in [(0u8, 1u8), (3u8, 1u8)] {
+        let barrier = Arc::new(Barrier::new(2));
+        let (tx, rx) = oneshot::channel();
+        // Low 4 bits look like NOERROR(0) or NXDOMAIN(3), but OPT extended-RCODE=1 makes it 16 (BADVERS) or 19 (BADMODE).
+        let ext_error = wire_reply(low, None, Some(ext));
+        let noerror = wire_reply(0, Some(2), Some(0));
+        let (u0, w0) = controlled_tcp_peer(
+            barrier.clone(),
+            None,
+            Some(tx),
+            ControlledReply::Wire(ext_error),
+        )
+        .await;
+        let (u1, w1) = controlled_tcp_peer(
+            barrier,
+            Some(rx),
+            None,
+            ControlledReply::Wire(noerror.clone()),
+        )
+        .await;
+        let result = timeout(
+            Duration::from_secs(2),
+            upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+        )
+        .await
+        .expect("must finish without waiting for timeout")
+        .expect("NOERROR should win over extended-RCODE error");
+        assert_eq!(result, noerror, "low={low} ext={ext}");
+        assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+        assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn valid_reply_wins_immediately_without_waiting_for_slow_peer() {
+    let cases = [
+        ("nodata", wire_reply(0, None, None)),
+        ("nxdomain", wire_reply(3, None, None)),
+        ("noerror-edns0", wire_reply(0, Some(7), Some(0))),
+    ];
+    for (label, winner) in cases {
+        let barrier = Arc::new(Barrier::new(2));
+        // Keep _hold alive until after exchange finishes so peer 1 is never released.
+        let (_hold, never_release) = oneshot::channel::<()>();
+        let (u0, w0) = controlled_tcp_peer(
+            barrier.clone(),
+            None,
+            None,
+            ControlledReply::Wire(winner.clone()),
+        )
+        .await;
+        let (u1, w1) = controlled_tcp_peer(
+            barrier,
+            Some(never_release),
+            None,
+            ControlledReply::Wire(wire_reply(0, Some(9), None)),
+        )
+        .await;
+        let result = timeout(
+            Duration::from_secs(2),
+            upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+        )
+        .await
+        .expect("valid reply must not wait for remaining peer")
+        .expect("valid reply must succeed");
+        assert_eq!(result, winner, "{label}");
+        assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+        assert!(
+            !timeout(Duration::from_secs(1), w1).await.unwrap().unwrap(),
+            "{label}: slow peer must be cancelled before sending"
+        );
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn all_dns_errors_returns_first_observed_and_single_error_does_not_wait() {
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let refused = wire_reply(5, None, None);
+    let servfail = wire_reply(2, None, None);
+    let (u0, w0) = controlled_tcp_peer(
+        barrier.clone(),
+        None,
+        Some(tx),
+        ControlledReply::Wire(refused.clone()),
+    )
+    .await;
+    let (u1, w1) = controlled_tcp_peer(
+        barrier,
+        Some(rx),
+        None,
+        ControlledReply::Wire(servfail),
+    )
+    .await;
+    let result = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("all-error group must finish immediately once all peers answer")
+    .expect("DNS error reply must be returned as Ok");
+    assert_eq!(result, refused, "must return the first observed DNS error");
+    assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+
+    // Single upstream returning SERVFAIL finishes immediately with no extra wait.
+    let single_barrier = Arc::new(Barrier::new(1));
+    let single_servfail = wire_reply(2, None, None);
+    let (single_u, single_w) = controlled_tcp_peer(
+        single_barrier,
+        None,
+        None,
+        ControlledReply::Wire(single_servfail.clone()),
+    )
+    .await;
+    let single_res = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[single_u], QUERY, Tcp),
+    )
+    .await
+    .expect("single DNS error must not wait")
+    .expect("single DNS error must return Ok");
+    assert_eq!(single_res, single_servfail);
+    assert!(
+        timeout(Duration::from_secs(1), single_w)
+            .await
+            .unwrap()
+            .unwrap()
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn dns_error_plus_io_failure_returns_dns_error_reply() {
+    // Order 1: DNS error arrives first, then second upstream fails with I/O close.
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let servfail = wire_reply(2, None, None);
+    let (u0, w0) = controlled_tcp_peer(
+        barrier.clone(),
+        None,
+        Some(tx),
+        ControlledReply::Wire(servfail.clone()),
+    )
+    .await;
+    let (u1, w1) = controlled_tcp_peer(barrier, Some(rx), None, ControlledReply::Close).await;
+    let res1 = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("DNS error + I/O close must finish promptly")
+    .expect("DNS error must be returned instead of I/O error");
+    assert_eq!(res1, servfail);
+    assert!(timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(!timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+
+    // Order 2: I/O close happens first, then second upstream replies with extended-RCODE error.
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let badvers = wire_reply(0, None, Some(1));
+    let (u0, w0) = controlled_tcp_peer(barrier.clone(), None, Some(tx), ControlledReply::Close).await;
+    let (u1, w1) = controlled_tcp_peer(
+        barrier,
+        Some(rx),
+        None,
+        ControlledReply::Wire(badvers.clone()),
+    )
+    .await;
+    let res2 = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("I/O close + DNS error must finish promptly")
+    .expect("DNS error must be returned instead of I/O error");
+    assert_eq!(res2, badvers);
+    assert!(!timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn all_io_failures_keeps_aggregated_io_error() {
+    let barrier = Arc::new(Barrier::new(2));
+    let (tx, rx) = oneshot::channel();
+    let (u0, w0) = controlled_tcp_peer(barrier.clone(), None, Some(tx), ControlledReply::Close).await;
+    let (u1, w1) = controlled_tcp_peer(
+        barrier,
+        Some(rx),
+        None,
+        ControlledReply::Wire(vec![0x42, 0x42, 0x81]), // truncated invalid header -> InvalidData
+    )
+    .await;
+    let addr0 = format!("tcp://127.0.0.1:{}", u0.port.unwrap());
+    let addr1 = format!("tcp://127.0.0.1:{}", u1.port.unwrap());
+    let error = timeout(
+        Duration::from_secs(2),
+        upstream_group::exchange(&[u0, u1], QUERY, Tcp),
+    )
+    .await
+    .expect("all I/O failures must finish promptly")
+    .unwrap_err();
+    let message = error.to_string();
+    assert!(message.starts_with("no upstream answered: "), "{message}");
+    let p0 = message.find(&addr0).expect("first upstream must be named");
+    let p1 = message.find(&addr1).expect("second upstream must be named");
+    assert!(p0 < p1, "configuration order preserved: {message}");
+    assert!(!timeout(Duration::from_secs(1), w0).await.unwrap().unwrap());
+    assert!(timeout(Duration::from_secs(1), w1).await.unwrap().unwrap());
 }
