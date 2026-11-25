@@ -59,9 +59,44 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::sync::watch;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
+
+/// Shared cap on concurrent client TCP connection tasks across all listeners.
+///
+/// Sized for OpenWrt routers (typical 128–512 MiB RAM, default `ulimit -n` 1024):
+/// each active TCP client holds 1 client FD (+ up to a few upstream FDs) and at
+/// most ~128 KiB worst-case wire buffers (64 KiB query + 64 KiB reply), so 128
+/// keeps worst-case memory bounded (~16 MiB) and FDs well below `RLIMIT_NOFILE`,
+/// while leaving ample headroom for normal LAN DNS-over-TCP bursts (comparable to
+/// BIND9 `tcp-clients` 150 / dnsmasq 150).
+pub const DEFAULT_MAX_TCP_CONNECTIONS: usize = 128;
+
+/// Application-level TCP admission counters observed by tests via `watch`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub struct TcpAdmissionStats {
+    pub admitted: usize,
+    pub active: usize,
+    pub peak_active: usize,
+    pub rejected: usize,
+}
+
+struct TcpPermit {
+    permit: Option<OwnedSemaphorePermit>,
+    stats: Option<watch::Sender<TcpAdmissionStats>>,
+}
+
+impl Drop for TcpPermit {
+    fn drop(&mut self) {
+        // Release the semaphore permit before notifying observers of `active` drop.
+        drop(self.permit.take());
+        if let Some(stats) = &self.stats {
+            stats.send_modify(|s| s.active -= 1);
+        }
+    }
+}
 
 pub async fn run(
     config: Config,
@@ -99,12 +134,36 @@ pub async fn run_with_ip_writer(
 }
 
 /// The production clock is monotonic; tests can advance it without sleeping.
+#[allow(dead_code)]
 pub async fn run_with_cache_clock(
+    config: Config,
+    shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
+    clock: Arc<dyn cache::Clock>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_tcp_limit(
+        config,
+        shutdown,
+        ip_test,
+        ip_writer,
+        clock,
+        DEFAULT_MAX_TCP_CONNECTIONS,
+        None,
+    )
+    .await
+}
+
+/// Injection point for deterministic TCP admission tests with a small shared quota.
+#[allow(dead_code)]
+pub async fn run_with_tcp_limit(
     config: Config,
     mut shutdown: watch::Receiver<bool>,
     ip_test: Arc<dyn IpTest>,
     ip_writer: Arc<dyn IpWriter>,
     clock: Arc<dyn cache::Clock>,
+    max_tcp_connections: usize,
+    tcp_stats: Option<watch::Sender<TcpAdmissionStats>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     config.validate_startup()?;
     let router = Router::load(&config);
@@ -188,10 +247,16 @@ pub async fn run_with_cache_clock(
         });
     }
     // Keep all UDP readiness lines ahead of TCP readiness lines.
+    // All TCP listeners share one permit pool. Permits are acquired via
+    // try_acquire_owned only after accept(), so idle listeners hold zero permits
+    // and overload sheds immediately (close without spawning a waiting task).
+    let tcp_permits = Arc::new(Semaphore::new(max_tcp_connections));
     for listener in listeners {
         println!("listening TCP {}", listener.local_addr()?);
         let upstream = upstream.clone();
         let mut shutdown = shutdown.clone();
+        let tcp_permits = tcp_permits.clone();
+        let tcp_stats = tcp_stats.clone();
         tasks.spawn(async move {
             let mut queries = JoinSet::new();
             let mut next_id = 0u16;
@@ -209,11 +274,30 @@ pub async fn run_with_cache_clock(
                         continue;
                     }
                 };
+                let Ok(permit) = tcp_permits.clone().try_acquire_owned() else {
+                    drop(stream);
+                    if let Some(stats) = &tcp_stats {
+                        stats.send_modify(|s| s.rejected += 1);
+                    }
+                    continue;
+                };
+                if let Some(stats) = &tcp_stats {
+                    stats.send_modify(|s| {
+                        s.admitted += 1;
+                        s.active += 1;
+                        s.peak_active = s.peak_active.max(s.active);
+                    });
+                }
+                let permit = TcpPermit {
+                    permit: Some(permit),
+                    stats: tcp_stats.clone(),
+                };
                 next_id = next_id.wrapping_add(1);
                 let id = next_id;
                 let upstream = upstream.clone();
                 let shutdown = shutdown.clone();
                 queries.spawn(async move {
+                    let _permit = permit;
                     if let Err(error) = tcp_query(stream, &upstream, id, peer, shutdown).await {
                         eprintln!("TCP client {peer}: {error}");
                     }
