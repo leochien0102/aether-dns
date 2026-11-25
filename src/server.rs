@@ -65,14 +65,13 @@ use tokio::time::{Duration, timeout};
 
 /// Shared cap on concurrent client UDP query tasks across all listeners.
 ///
-/// Sized for OpenWrt routers (typical 128–512 MiB RAM, default `ulimit -n` 1024):
-/// UDP is the primary LAN DNS transport and browsers/clients emit parallel bursts
-/// (e.g. A/AAAA/HTTPS), so 256 provides higher headroom than TCP (128) and
-/// dnsmasq's default `dns-forward-max` (150). Even under dual-exchange
-/// (`RouteTag::None`, up to 2 upstream sockets per query), 256 keeps peak
-/// upstream FDs (~512) safely below a 1024 `RLIMIT_NOFILE` alongside TCP and
-/// listener sockets, while bounding concurrent in-flight tasks without promising
-/// a process-wide total memory cap.
+/// Sized for OpenWrt home/SOHO routers: UDP is the primary LAN DNS transport
+/// and browsers/clients emit parallel bursts (e.g. A/AAAA/HTTPS), so 256
+/// provides higher burst headroom than TCP (128) and dnsmasq's default
+/// `dns-forward-max` (150) while bounding concurrent client-side UDP tasks.
+/// This cap governs client UDP admission only: an upstream group may
+/// concurrently attempt multiple upstreams per query, so this task does not
+/// cap total upstream attempts or promise a process-wide FD or memory ceiling.
 pub const DEFAULT_MAX_UDP_QUERIES: usize = 256;
 
 /// Shared cap on concurrent client TCP connection tasks across all listeners.
