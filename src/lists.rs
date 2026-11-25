@@ -45,13 +45,14 @@ fn load(paths: &[String], tag: RouteTag, names: &mut HashMap<Vec<u8>, RouteTag>)
         for token in bytes.split(u8::is_ascii_whitespace) {
             if let Some(name) = check_name(token) {
                 // dnl_init inserts high-priority tags first; duplicates keep that tag.
-                names.entry(name.to_vec()).or_insert(tag);
+                names.entry(name.to_ascii_lowercase()).or_insert(tag);
             }
         }
     }
 }
 
-/// Resolve a case-sensitive, dot-separated qname using only files named in config.
+/// Resolve an ASCII-case-insensitive, dot-separated qname using only config files.
+/// Non-ASCII bytes are matched exactly, without Unicode case folding.
 ///
 /// Priority breaks ties for the same suffix: later custom groups, then gfw, then
 /// chn. A longer suffix always wins, even over a higher-priority tag. As in
@@ -86,7 +87,8 @@ impl Router {
     }
 
     pub fn resolve(&self, qname: &str) -> RouteTag {
-        let mut suffix = last_eight_labels(qname.as_bytes());
+        let name = last_eight_labels(qname.as_bytes()).to_ascii_lowercase();
+        let mut suffix = name.as_slice();
         loop {
             if let Some(&tag) = self.names.get(suffix) {
                 return tag;

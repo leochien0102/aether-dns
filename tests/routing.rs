@@ -122,15 +122,15 @@ async fn route_case(
         bind_port: vec![],
         china_dns: vec![endpoints[0].clone()],
         trust_dns: vec![endpoints[1].clone(), endpoints[4].clone()],
-        gfwlist_file: vec![files.list("gfw", "gfw.example\nshared.example\n")],
-        chnlist_file: vec![files.list("chn", "chn.example\nshared.example\n")],
+        gfwlist_file: vec![files.list("gfw", "GfW.Example\nshared.example\n")],
+        chnlist_file: vec![files.list("chn", "ChN.Example\nSHARED.EXAMPLE\n")],
         default_tag: default,
         groups: (0..2)
             .map(|i| Group {
                 name: format!("g{i}"),
                 dnl: vec![files.list(
                     &format!("g{i}"),
-                    &format!("group{i}.example\nshared.example\n"),
+                    &format!("GrOuP{i}.Example\nShared.Example\n"),
                 )],
                 upstream: vec![endpoints[i + 2].clone()],
                 ipset: None,
@@ -219,11 +219,11 @@ async fn route_case(
 
 #[tokio::test(flavor = "current_thread")]
 async fn gfw_routes_trust_udp() {
-    route_case("q.gfw.example", None, false, Some(1), None, false).await;
+    route_case("Q.gfw.example", None, false, Some(1), None, false).await;
 }
 #[tokio::test(flavor = "current_thread")]
 async fn chn_routes_china_tcp() {
-    route_case("q.chn.example", None, true, Some(0), None, false).await;
+    route_case("Q.cHN.EXAMPLE", None, true, Some(0), None, false).await;
 }
 #[tokio::test(flavor = "current_thread")]
 async fn group0_routes_own_upstream() {
@@ -231,7 +231,7 @@ async fn group0_routes_own_upstream() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn group1_routes_own_upstream_tcp() {
-    route_case("q.group1.example", None, true, Some(3), None, false).await;
+    route_case("Q.GROUP1.EXAMPLE", None, true, Some(3), None, false).await;
 }
 #[tokio::test(flavor = "current_thread")]
 async fn default_chn_routes_china() {
@@ -273,7 +273,7 @@ async fn none_uses_china_when_trust_empty() {
 }
 #[tokio::test(flavor = "current_thread")]
 async fn lists_loaded_once_and_later_group_wins() {
-    route_case("q.shared.example", None, false, Some(3), None, true).await;
+    route_case("Q.sHaReD.EXAMPLE", None, false, Some(3), None, true).await;
 }
 #[tokio::test(flavor = "current_thread")]
 async fn empty_custom_group_servfail_without_fallback() {

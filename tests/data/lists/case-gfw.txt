@@ -1,0 +1,7 @@
+MiXeD.Example
+shared.test
+BUILTIN.TEST
+Specific.Long.Test
+ÉXAMPLE.Test
+ÄSAME.Test
+discard.also.A.B.C.D.E.F.G.TEST

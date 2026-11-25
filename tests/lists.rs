@@ -5,7 +5,7 @@ mod config;
 mod lists;
 
 use config::{Config, Group, Tag};
-use lists::{RouteTag, resolve};
+use lists::{RouteTag, Router, resolve};
 use std::io::Write;
 use std::path::Path;
 
@@ -38,6 +38,72 @@ fn one_file(name: &str) -> Config {
     Config {
         gfwlist_file: vec![path(name)],
         ..Config::default()
+    }
+}
+
+#[test]
+fn ascii_case_fixed_lists() {
+    let config = Config {
+        gfwlist_file: vec![path("case-gfw.txt")],
+        chnlist_file: vec![path("case-chn.txt")],
+        groups: (0..2)
+            .map(|i| Group {
+                name: format!("g{i}"),
+                dnl: vec![path(&format!("case-group{i}.txt"))],
+                ..Group::default()
+            })
+            .collect(),
+        ..Config::default()
+    };
+    let router = Router::load(&config);
+    let cases = [
+        ("MiXeD.Example", RouteTag::Gfw),
+        ("mixed.example", RouteTag::Gfw),
+        ("MIXED.EXAMPLE", RouteTag::Gfw),
+        ("x.mIxEd.eXaMpLe", RouteTag::Gfw),
+        ("notmixed.example", RouteTag::None),
+        ("shared.test", RouteTag::Group(1)),
+        ("SHARED.TEST", RouteTag::Group(1)),
+        ("Shared.Test", RouteTag::Group(1)),
+        ("sHaReD.tEsT", RouteTag::Group(1)),
+        ("x.ShArEd.TeSt", RouteTag::Group(1)),
+        ("BUILTIN.TEST", RouteTag::Gfw),
+        ("builtin.test", RouteTag::Gfw),
+        ("bUiLtIn.TeSt", RouteTag::Gfw),
+        ("Specific.Long.Test", RouteTag::Gfw),
+        ("x.specific.long.test", RouteTag::Gfw),
+        ("x.SPECIFIC.LONG.TEST", RouteTag::Gfw),
+        ("x.LONG.TEST", RouteTag::Group(1)),
+        ("ÉXAMPLE.Test", RouteTag::Gfw),
+        ("Éxample.test", RouteTag::Gfw),
+        ("éxample.test", RouteTag::None),
+        ("Äsame.test", RouteTag::Gfw),
+        ("äsame.test", RouteTag::Chn),
+        ("different.a.b.c.d.e.f.g.test", RouteTag::Gfw),
+        ("DIFFERENT.A.B.C.D.E.F.G.TEST", RouteTag::Gfw),
+        ("b.c.d.e.f.g.test", RouteTag::None),
+        ("unlisted.test", RouteTag::None),
+    ];
+    let actual: Vec<_> = cases
+        .iter()
+        .map(|(name, _)| {
+            let tag = router.resolve(name);
+            println!("{name} -> {tag:?}");
+            tag
+        })
+        .collect();
+    assert_eq!(actual, cases.map(|(_, tag)| tag));
+    for (default, expected) in [
+        (Tag::Chn, RouteTag::Chn),
+        (Tag::Gfw, RouteTag::Gfw),
+        (Tag::None, RouteTag::None),
+    ] {
+        let router = Router::load(&Config {
+            default_tag: Some(default),
+            ..config.clone()
+        });
+        assert_eq!(router.resolve("UnLiStEd.TeSt"), expected);
+        assert_eq!(router.resolve("mIxEd.ExAmPlE"), RouteTag::Gfw);
     }
 }
 
@@ -123,10 +189,10 @@ lookup_cases! {
         c.default_tag = Some(Tag::Chn);
         assert_eq!(resolve("example.com", &c), RouteTag::Gfw);
     },
-    case_sensitive => {
+    ascii_case_insensitive => {
         assert_eq!(resolve("Case.Example", &standard()), RouteTag::Gfw);
-        assert_eq!(resolve("case.example", &standard()), RouteTag::None);
-        assert_eq!(resolve("EXAMPLE.COM", &standard()), RouteTag::None);
+        assert_eq!(resolve("case.example", &standard()), RouteTag::Gfw);
+        assert_eq!(resolve("EXAMPLE.COM", &standard()), RouteTag::Gfw);
     },
     whitespace_tokens => {
         let c = one_file("tokens.txt");

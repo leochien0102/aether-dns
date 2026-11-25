@@ -1,0 +1,3 @@
+SHARED.TEST
+builtin.test
+äSAME.test
