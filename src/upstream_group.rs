@@ -17,8 +17,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 /// multi-upstream / dual-group queries can fan out to 2–4+ attempts per query.
 /// Capping concurrent upstream attempts at 256 bounds upstream attempt buffers
 /// to ~16 MiB and keeps upstream socket count well below typical `ulimit -n`
-/// (1024) while still supporting 128 concurrent 2-upstream queries or 64
-/// concurrent 2+2 dual-group queries (above dnsmasq's default 150 forwards).
+/// (1024) while still leaving headroom for multi-upstream groups and dual-group
+/// `none` queries under normal LAN bursts.
 /// This cap governs upstream exchange attempts only and does not claim a
 /// process-wide FD or RSS ceiling.
 #[allow(dead_code)]

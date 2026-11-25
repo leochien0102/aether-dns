@@ -701,8 +701,9 @@ async fn none_exchange(
             if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, routing, qname)) {
                 return china_result;
             }
-            // A failed side cannot hide the other side's legal response.
-            trust.await.or(china_result)
+            // A failed side cannot hide the other side's legal response, and
+            // a quota-rejected side must not mask an actual exchange error.
+            merge_dual_results(trust.await, china_result)
         }
         trust_result = &mut trust => {
             // Trust arriving first is held until china decides (or fails).
@@ -710,10 +711,57 @@ async fn none_exchange(
             if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, routing, qname)) {
                 china_result
             } else {
-                trust_result.or(china_result)
+                merge_dual_results(trust_result, china_result)
             }
         }
     }
+}
+
+/// Merge dual-group (`none`) results after `china` was not selected via
+/// `use_china_reply`. Preserves any `Ok` reply (including DNS error replies)
+/// and, when both sides fail, keeps an actual upstream exchange error over a
+/// `WouldBlock` concurrency rejection regardless of side or completion order.
+#[allow(dead_code)]
+pub fn merge_dual_results(
+    trust: std::io::Result<Vec<u8>>,
+    china: std::io::Result<Vec<u8>>,
+) -> std::io::Result<Vec<u8>> {
+    match (trust, china) {
+        (Ok(reply), _) | (Err(_), Ok(reply)) => Ok(reply),
+        (Err(trust_err), Err(china_err)) => {
+            if china_err.kind() == std::io::ErrorKind::WouldBlock
+                && trust_err.kind() != std::io::ErrorKind::WouldBlock
+            {
+                Err(trust_err)
+            } else {
+                Err(china_err)
+            }
+        }
+    }
+}
+
+/// Test-only helper to invoke `exchange_response` directly with a small
+/// upstream attempt limiter and observe the exact `io::Result`.
+#[allow(dead_code)]
+pub async fn exchange_once_with_limit(
+    config: Config,
+    query: &[u8],
+    client_protocol: Protocol,
+    limiter: upstream_group::UpstreamLimiter,
+) -> std::io::Result<Vec<u8>> {
+    let router = Router::load(&config);
+    let routing = Routing {
+        verdict: std::sync::Mutex::new(verdict::VerdictCache::new(config.verdict_cache)),
+        cache: std::sync::Mutex::new(cache::Cache::new(config.cache, config.cache_stale)),
+        clock: Arc::new(cache::MonotonicClock::default()),
+        refresh_tasks: std::sync::Mutex::new(None),
+        upstream_limiter: limiter,
+        config,
+        router,
+        ip_test: Arc::new(NftIpTest::new(None)),
+        ip_writer: Arc::new(NoopWriter),
+    };
+    exchange_response(&routing, query, client_protocol).await
 }
 
 fn wire_error(_: dns::WireError) -> std::io::Error {

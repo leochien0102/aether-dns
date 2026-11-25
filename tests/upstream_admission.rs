@@ -655,3 +655,298 @@ async fn background_refresh_shares_quota_and_cannot_bypass() {
         .unwrap();
     pool.abort();
 }
+
+#[tokio::test]
+async fn dual_merge_preserves_actual_exchange_error_regardless_of_side() {
+    let (stats_tx, mut stats_rx) = watch::channel(UpstreamAdmissionStats::default());
+    let limiter = UpstreamLimiter::new(1, Some(stats_tx));
+    let q = build_query(0x8801, "dualerr");
+
+    // Two controlled TCP listeners whose accept loop can be released via a channel.
+    let china_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let china_addr = china_listener.local_addr().unwrap();
+    let trust_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let trust_addr = trust_listener.local_addr().unwrap();
+
+    let china_upstream = Upstream {
+        protocol: Some(Protocol::Tcp),
+        host: None,
+        ip: china_addr.ip(),
+        port: Some(china_addr.port()),
+    };
+    let trust_upstream = Upstream {
+        protocol: Some(Protocol::Tcp),
+        host: None,
+        ip: trust_addr.ip(),
+        port: Some(trust_addr.port()),
+    };
+
+    // Case A: trust is admitted and fails with TCP EOF; china is rejected (WouldBlock).
+    let (trust_accepted_tx, mut trust_accepted_rx) = mpsc::unbounded_channel();
+    let (trust_close_tx, trust_close_rx) = tokio::sync::oneshot::channel();
+    let trust_task = tokio::spawn({
+        let trust_upstream = trust_upstream.clone();
+        let q = q.clone();
+        let limiter = limiter.clone();
+        async move {
+            upstream_group::exchange_with_limit(&[trust_upstream], &q, Protocol::Tcp, &limiter)
+                .await
+        }
+    });
+    let trust_server = tokio::spawn(async move {
+        let (stream, _) = trust_listener.accept().await.unwrap();
+        trust_accepted_tx.send(()).unwrap();
+        let _ = trust_close_rx.await;
+        drop(stream);
+        trust_listener
+    });
+    timeout(IO_TIMEOUT, trust_accepted_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    wait_stats(&mut stats_rx, |s| s.active == 1).await;
+
+    // While trust holds the only permit, china must be rejected without touching china_listener.
+    let china_result =
+        upstream_group::exchange_with_limit(&[china_upstream.clone()], &q, Protocol::Tcp, &limiter)
+            .await;
+    assert_eq!(
+        china_result.as_ref().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    wait_stats(&mut stats_rx, |s| s.rejected == 1).await;
+
+    // Close trust stream so trust fails with a real I/O error and releases its permit.
+    trust_close_tx.send(()).unwrap();
+    let trust_listener = trust_server.await.unwrap();
+    let trust_result = trust_task.await.unwrap();
+    assert_ne!(
+        trust_result.as_ref().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    let s = wait_stats(&mut stats_rx, |s| s.active == 0).await;
+    assert_eq!(s.peak_active, 1);
+
+    let merged_a = server::merge_dual_results(trust_result, china_result).unwrap_err();
+    assert_ne!(
+        merged_a.kind(),
+        std::io::ErrorKind::WouldBlock,
+        "china WouldBlock must not mask trust actual I/O error"
+    );
+    assert!(
+        merged_a.to_string().contains(&format!("tcp://{trust_addr}")),
+        "merged error must name admitted trust upstream: {merged_a}"
+    );
+    assert!(
+        timeout(Duration::from_millis(20), china_listener.accept())
+            .await
+            .is_err(),
+        "rejected china side must not have connected"
+    );
+
+    // Case B: china is admitted and fails with TCP EOF; trust is rejected (WouldBlock).
+    let (china_accepted_tx, mut china_accepted_rx) = mpsc::unbounded_channel();
+    let (china_close_tx, china_close_rx) = tokio::sync::oneshot::channel();
+    let china_task = tokio::spawn({
+        let china_upstream = china_upstream.clone();
+        let q = q.clone();
+        let limiter = limiter.clone();
+        async move {
+            upstream_group::exchange_with_limit(&[china_upstream], &q, Protocol::Tcp, &limiter)
+                .await
+        }
+    });
+    let china_server = tokio::spawn(async move {
+        let (stream, _) = china_listener.accept().await.unwrap();
+        china_accepted_tx.send(()).unwrap();
+        let _ = china_close_rx.await;
+        drop(stream);
+        china_listener
+    });
+    timeout(IO_TIMEOUT, china_accepted_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    wait_stats(&mut stats_rx, |s| s.active == 1).await;
+
+    let trust_result =
+        upstream_group::exchange_with_limit(&[trust_upstream.clone()], &q, Protocol::Tcp, &limiter)
+            .await;
+    assert_eq!(
+        trust_result.as_ref().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    wait_stats(&mut stats_rx, |s| s.rejected == 2).await;
+
+    china_close_tx.send(()).unwrap();
+    let _china_listener = china_server.await.unwrap();
+    let china_result = china_task.await.unwrap();
+    assert_ne!(
+        china_result.as_ref().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    let s = wait_stats(&mut stats_rx, |s| s.active == 0).await;
+    assert_eq!(s.peak_active, 1);
+
+    let merged_b = server::merge_dual_results(trust_result, china_result).unwrap_err();
+    assert_ne!(
+        merged_b.kind(),
+        std::io::ErrorKind::WouldBlock,
+        "trust WouldBlock must not mask china actual I/O error"
+    );
+    assert!(
+        merged_b.to_string().contains(&format!("tcp://{china_addr}")),
+        "merged error must name admitted china upstream: {merged_b}"
+    );
+    assert!(
+        timeout(Duration::from_millis(20), trust_listener.accept())
+            .await
+            .is_err(),
+        "rejected trust side must not have connected"
+    );
+
+    // Case C: both sides rejected -> remains WouldBlock (silent SERVFAIL path).
+    let both_rejected = server::merge_dual_results(
+        Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "upstream concurrency limit reached",
+        )),
+        Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "upstream concurrency limit reached",
+        )),
+    )
+    .unwrap_err();
+    assert_eq!(both_rejected.kind(), std::io::ErrorKind::WouldBlock);
+}
+
+#[tokio::test]
+async fn none_exchange_preserves_actual_io_error_when_other_side_rejected() {
+    let china_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let china_addr = china_listener.local_addr().unwrap();
+    let trust_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let trust_addr = trust_listener.local_addr().unwrap();
+
+    let china_hits = Arc::new(AtomicUsize::new(0));
+    let trust_hits = Arc::new(AtomicUsize::new(0));
+    let china_worker = {
+        let hits = china_hits.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = china_listener.accept().await {
+                hits.fetch_add(1, Ordering::SeqCst);
+                drop(stream);
+            }
+        })
+    };
+    let trust_worker = {
+        let hits = trust_hits.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = trust_listener.accept().await {
+                hits.fetch_add(1, Ordering::SeqCst);
+                drop(stream);
+            }
+        })
+    };
+
+    let config = Config {
+        default_tag: Some(Tag::None),
+        china_dns: vec![Upstream {
+            protocol: Some(Protocol::Tcp),
+            host: None,
+            ip: china_addr.ip(),
+            port: Some(china_addr.port()),
+        }],
+        trust_dns: vec![Upstream {
+            protocol: Some(Protocol::Tcp),
+            host: None,
+            ip: trust_addr.ip(),
+            port: Some(trust_addr.port()),
+        }],
+        ..Config::default()
+    };
+    let (stats_tx, mut stats_rx) = watch::channel(UpstreamAdmissionStats::default());
+    let limiter = UpstreamLimiter::new(1, Some(stats_tx));
+    let q = build_query(0x8802, "dualboth");
+
+    let mut seen_china_rejected = false;
+    let mut seen_trust_rejected = false;
+    let mut iterations = 0usize;
+
+    for i in 0..64 {
+        iterations = i + 1;
+        let c_before = china_hits.load(Ordering::SeqCst);
+        let t_before = trust_hits.load(Ordering::SeqCst);
+        let err = server::exchange_once_with_limit(
+            config.clone(),
+            &q,
+            Protocol::Tcp,
+            limiter.clone(),
+        )
+        .await
+        .unwrap_err();
+        let s = wait_stats(&mut stats_rx, |s| s.active == 0 && s.admitted == iterations).await;
+        assert_eq!(s.peak_active, 1);
+        assert_eq!(s.rejected, iterations);
+        assert_ne!(
+            err.kind(),
+            std::io::ErrorKind::WouldBlock,
+            "actual I/O error must not be masked by WouldBlock: {err}"
+        );
+        let c_delta = china_hits.load(Ordering::SeqCst) - c_before;
+        let t_delta = trust_hits.load(Ordering::SeqCst) - t_before;
+        match (c_delta, t_delta) {
+            (0, 1) => {
+                assert!(
+                    err.to_string().contains(&format!("tcp://{trust_addr}")),
+                    "expected trust error when china rejected, got: {err}"
+                );
+                seen_china_rejected = true;
+            }
+            (1, 0) => {
+                assert!(
+                    err.to_string().contains(&format!("tcp://{china_addr}")),
+                    "expected china error when trust rejected, got: {err}"
+                );
+                seen_trust_rejected = true;
+            }
+            other => panic!("expected exactly one side admitted per exchange, got {other:?}"),
+        }
+        if seen_china_rejected && seen_trust_rejected {
+            break;
+        }
+    }
+    assert!(
+        seen_china_rejected && seen_trust_rejected,
+        "expected both china-rejected and trust-rejected directions within 64 iterations"
+    );
+
+    // Follow-up exchange on the same limiter succeeds after all permits were returned.
+    let mut ok_pool = GatedUdpPool::new(1).await;
+    let ok_task = tokio::spawn({
+        let upstreams = ok_pool.upstreams.clone();
+        let q = q.clone();
+        let limiter = limiter.clone();
+        async move {
+            upstream_group::exchange_with_limit(&upstreams, &q, Protocol::Udp, &limiter).await
+        }
+    });
+    let req = ok_pool.recv_req().await;
+    ok_pool.reply(&req, 60, 77, 0).await;
+    let reply = ok_task.await.unwrap().unwrap();
+    assert_eq!(answer_last_octet(&reply), 77);
+    let final_stats = wait_stats(&mut stats_rx, |s| s.active == 0).await;
+    assert_eq!(final_stats.peak_active, 1);
+
+    println!(
+        "dual_exchange_error_preservation: iterations={} china_hits={} trust_hits={} peak_active={} active_after={}",
+        iterations,
+        china_hits.load(Ordering::SeqCst),
+        trust_hits.load(Ordering::SeqCst),
+        final_stats.peak_active,
+        final_stats.active,
+    );
+
+    ok_pool.abort();
+    china_worker.abort();
+    trust_worker.abort();
+}
