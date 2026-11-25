@@ -102,6 +102,7 @@ async fn check(capacity: Option<u64>, member: bool, upstream_tcp: bool, steps: V
         bind_addr: vec![Ipv4Addr::LOCALHOST],
         default_tag: Some(Tag::None),
         verdict_cache: capacity,
+        cache: Some(0), // Prove verdict reuse, never answer-cache reuse.
         ..Config::default()
     };
     let mut workers = Vec::new();
@@ -210,6 +211,11 @@ async fn check(capacity: Option<u64>, member: bool, upstream_tcp: bool, steps: V
         .await
         .unwrap();
         assert_eq!(&wire[..2], &query[..2]);
+        assert_eq!(
+            &wire[12..query.len()],
+            &query[12..],
+            "step {index}: original Question must be preserved"
+        );
         assert_eq!(wire[3] & 15, if step.selected.is_some() { 0 } else { 2 });
         if let Some(side) = step.selected {
             assert_eq!(wire[2] & 4 != 0, side == 0, "step {index}: wrong source");
@@ -257,6 +263,26 @@ async fn false_then_only_trust_tcp() {
     second.tcp = true;
     check(Some(4), false, true, vec![Step::new(1, [1, 1], 1), second]).await;
 }
+#[tokio::test]
+async fn ascii_case_true_reuses_verdict_not_answer_udp() {
+    let mut first = Step::new(0, [1, 1], 1);
+    first.name = "MiXeD";
+    let mut second = Step::new(0, [2, 1], 1);
+    second.name = "mIxEd";
+    check(Some(4), true, false, vec![first, second]).await;
+}
+
+#[tokio::test]
+async fn ascii_case_false_reuses_verdict_not_answer_tcp() {
+    let mut first = Step::new(1, [1, 1], 1);
+    first.name = "MiXeD";
+    first.tcp = true;
+    let mut second = Step::new(1, [1, 2], 1);
+    second.name = "mIxEd";
+    second.tcp = true;
+    check(Some(4), false, true, vec![first, second]).await;
+}
+
 #[tokio::test]
 async fn qname_key_shares_qtype_class_id_and_transport() {
     let mut second = Step::new(0, [2, 1], 1);
@@ -335,6 +361,7 @@ async fn zero_capacity_disables() {
 #[tokio::test]
 async fn cached_china_failure_servfail_no_fallback() {
     let mut second = Step::new(0, [2, 1], 1);
+    second.name = "VeRdIcT";
     second.modes[0] = Reply::Fail;
     second.selected = None;
     check(Some(4), true, true, vec![Step::new(0, [1, 1], 1), second]).await;
@@ -342,6 +369,7 @@ async fn cached_china_failure_servfail_no_fallback() {
 #[tokio::test]
 async fn cached_trust_timeout_servfail_no_fallback() {
     let mut second = Step::new(1, [1, 2], 1);
+    second.name = "VeRdIcT";
     second.modes[1] = Reply::Timeout;
     second.selected = None;
     second.tcp = true;
@@ -377,15 +405,52 @@ async fn china_failure_not_cached() {
 }
 
 #[test]
-fn cache_update_does_not_evict_and_wire_key_is_exact() {
+fn ascii_case_read_write_and_overwrite_both_verdicts() {
+    let mut cache = server::verdict::VerdictCache::new(Some(4));
+    let mixed = b"\x05MiXeD\x07ExAmPlE\0";
+    let lower = b"\x05mixed\x07example\0";
+    let upper = b"\x05MIXED\x07EXAMPLE\0";
+    for (key, verdict) in [(mixed, true), (lower, false), (upper, true), (mixed, false)] {
+        cache.add(key, verdict);
+        for variant in [mixed, lower, upper] {
+            assert_eq!(cache.get(variant), Some(verdict));
+        }
+    }
+}
+
+#[test]
+fn ascii_case_full_capacity_update_preserves_other_key() {
     let mut cache = server::verdict::VerdictCache::new(Some(2));
     cache.add(b"\x01a\0", true);
     cache.add(b"\x01b\0", false);
-    cache.add(b"\x01a\0", false);
+    // Update both keys: this detects accidental eviction regardless of HashMap order.
+    cache.add(b"\x01A\0", false);
     assert_eq!(cache.get(b"\x01a\0"), Some(false));
     assert_eq!(cache.get(b"\x01b\0"), Some(false));
-    assert_eq!(cache.get(b"\x01A\0"), None);
-    eprintln!(
-        "direct map: capacity=2; update preserves both keys; exact wire key; no upstream/IP tests"
-    );
+    cache.add(b"\x01B\0", true);
+    assert_eq!(cache.get(b"\x01A\0"), Some(false));
+    assert_eq!(cache.get(b"\x01b\0"), Some(true));
+}
+
+#[test]
+fn wire_key_preserves_non_ascii_label_boundaries_and_root() {
+    let mut cache = server::verdict::VerdictCache::new(Some(8));
+    // UTF-8 É/é stay distinct; their adjacent ASCII letters still fold.
+    cache.add(b"\x03\xc3\x89A\0", true);
+    cache.add(b"\x03\xc3\xa9a\0", false);
+    assert_eq!(cache.get(b"\x03\xc3\x89a\0"), Some(true));
+    assert_eq!(cache.get(b"\x03\xc3\xa9A\0"), Some(false));
+    // A literal dot inside a label is not a label separator.
+    cache.add(b"\x03A.B\0", true);
+    cache.add(b"\x01a\x01b\0", false);
+    assert_eq!(cache.get(b"\x03a.b\0"), Some(true));
+    assert_eq!(cache.get(b"\x01A\x01B\0"), Some(false));
+    // Embedded NUL and root terminator remain different bytes/positions.
+    cache.add(b"\x03A\0B\0", true);
+    cache.add(b"\x01a\0", false);
+    cache.add(b"\0", true);
+    assert_eq!(cache.get(b"\x03a\0b\0"), Some(true));
+    assert_eq!(cache.get(b"\x01A\0"), Some(false));
+    assert_eq!(cache.get(b"\0"), Some(true));
+    assert_eq!(cache.get(b"\x01a\x01b\x01c\0"), None);
 }
