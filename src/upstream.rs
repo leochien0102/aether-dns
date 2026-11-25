@@ -1,4 +1,5 @@
 use crate::config::{Protocol, Upstream};
+use crate::dns;
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -59,9 +60,13 @@ pub async fn exchange(
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "upstream timeout after 5 s"))?
 }
 
-fn valid_reply(response: &[u8], query: &[u8]) -> bool {
+#[allow(dead_code)]
+pub fn valid_reply(response: &[u8], query: &[u8]) -> bool {
     response.len() >= 12
+        && query.len() >= 12
         && response[..2] == query[..2]
         && response[2] & 0x80 != 0
         && response[4..6] == [0, 1]
+        && query[4..6] == [0, 1]
+        && dns::same_question(response, query)
 }

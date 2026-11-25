@@ -129,6 +129,102 @@ fn question_end(wire: &[u8], at: usize) -> Result<usize, WireError> {
     }
 }
 
+struct NameCursor<'a> {
+    wire: &'a [u8],
+    pos: usize,
+    total_len: usize,
+    max_ptr: usize,
+    end_pos: Option<usize>,
+}
+
+impl<'a> NameCursor<'a> {
+    fn new(wire: &'a [u8], start: usize) -> Self {
+        Self {
+            wire,
+            pos: start,
+            total_len: 0,
+            max_ptr: usize::MAX,
+            end_pos: None,
+        }
+    }
+
+    fn next_label(&mut self) -> Result<Option<&'a [u8]>, WireError> {
+        loop {
+            let len = *self.wire.get(self.pos).ok_or(WireError)?;
+            match len {
+                0 => {
+                    self.total_len += 1;
+                    if self.total_len > 255 {
+                        return Err(WireError);
+                    }
+                    if self.end_pos.is_none() {
+                        self.end_pos = Some(self.pos + 1);
+                    }
+                    return Ok(None);
+                }
+                1..=63 => {
+                    let n = usize::from(len);
+                    let start = self.pos + 1;
+                    let end = start.checked_add(n).ok_or(WireError)?;
+                    let label = self.wire.get(start..end).ok_or(WireError)?;
+                    self.total_len += 1 + n;
+                    if self.total_len >= 255 {
+                        return Err(WireError);
+                    }
+                    self.pos = end;
+                    return Ok(Some(label));
+                }
+                0xc0..=0xff => {
+                    let lo = *self.wire.get(self.pos + 1).ok_or(WireError)?;
+                    let ptr = (usize::from(len & 0x3f) << 8) | usize::from(lo);
+                    if ptr < 12 || ptr >= self.pos || ptr >= self.max_ptr {
+                        return Err(WireError);
+                    }
+                    if self.end_pos.is_none() {
+                        self.end_pos = Some(self.pos + 2);
+                    }
+                    self.max_ptr = ptr;
+                    self.pos = ptr;
+                }
+                _ => return Err(WireError),
+            }
+        }
+    }
+
+    fn qtype_qclass(&self) -> Result<(u16, u16), WireError> {
+        let end = self.end_pos.ok_or(WireError)?;
+        Ok((word(self.wire, end)?, word(self.wire, end + 2)?))
+    }
+}
+
+/// Compare the first Question (QNAME by DNS labels with ASCII-only case
+/// folding, plus exact QTYPE and QCLASS) of two DNS wire messages starting at
+/// byte 12. Stops at the end of the Question section so legal truncated
+/// (`TC=1`) replies with an intact matching question are not rejected due to
+/// truncated trailing sections.
+pub fn same_question(response: &[u8], query: &[u8]) -> bool {
+    if response.len() < 12 || query.len() < 12 {
+        return false;
+    }
+    let mut r = NameCursor::new(response, 12);
+    let mut q = NameCursor::new(query, 12);
+    loop {
+        match (r.next_label(), q.next_label()) {
+            (Ok(Some(rl)), Ok(Some(ql))) => {
+                if !rl.eq_ignore_ascii_case(ql) {
+                    return false;
+                }
+            }
+            (Ok(None), Ok(None)) => break,
+            _ => return false,
+        }
+    }
+    match (r.qtype_qclass(), q.qtype_qclass()) {
+        (Ok(rt), Ok(qt)) => rt == qt,
+        _ => false,
+    }
+}
+
 /// The forwarding gate intentionally does not depend on hickory's full parser.
 pub fn check_query(wire: &[u8]) -> Result<(), WireError> {
     if wire.len() < 12 || wire[2] & 0x80 != 0 || word(wire, 4)? != 1 {
