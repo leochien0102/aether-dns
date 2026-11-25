@@ -210,6 +210,26 @@ fn valid_reply_safely_rejects_short_and_unreadable_questions() {
         );
     }
 
+    // Backward compression pointer inside the first QNAME landing inside a prior
+    // label's payload bytes: if followed, offset 13 (`\x01x\x00`) would produce
+    // the exact same second label and root terminator as `q_embedded`, so this
+    // rejection proves compression pointers are disallowed in the first QNAME
+    // rather than failing due to a name mismatch.
+    let q_embedded = query_wire(0x4242, b"\x03\x01x\x00\x01x\x00", 1, 1);
+    let r_embedded_uncompressed = reply_wire(0x4242, b"\x03\x01x\x00\x01x\x00", 1, 1);
+    assert!(
+        upstream::valid_reply(&r_embedded_uncompressed, &q_embedded),
+        "uncompressed baseline with Answer compression pointer must match"
+    );
+    let mut r_embedded_ptr = build_wire(0x4242, 0x81, 0x80, 1, 1, 0, b"\x03\x01x\x00\xc0\x0d", 1, 1);
+    r_embedded_ptr.extend_from_slice(&[
+        0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 203, 0, 113, 9,
+    ]);
+    assert!(
+        !upstream::valid_reply(&r_embedded_ptr, &q_embedded),
+        "backward pointer into prior label data inside first QNAME must be rejected"
+    );
+
     // Overlong QNAME (256 wire bytes).
     let overlong = max_len_qname(62);
     assert_eq!(overlong.len(), 256);
