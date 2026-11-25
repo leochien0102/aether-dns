@@ -63,6 +63,18 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
 
+/// Shared cap on concurrent client UDP query tasks across all listeners.
+///
+/// Sized for OpenWrt routers (typical 128–512 MiB RAM, default `ulimit -n` 1024):
+/// UDP is the primary LAN DNS transport and browsers/clients emit parallel bursts
+/// (e.g. A/AAAA/HTTPS), so 256 provides higher headroom than TCP (128) and
+/// dnsmasq's default `dns-forward-max` (150). Even under dual-exchange
+/// (`RouteTag::None`, up to 2 upstream sockets per query), 256 keeps peak
+/// upstream FDs (~512) safely below a 1024 `RLIMIT_NOFILE` alongside TCP and
+/// listener sockets, while bounding concurrent in-flight tasks without promising
+/// a process-wide total memory cap.
+pub const DEFAULT_MAX_UDP_QUERIES: usize = 256;
+
 /// Shared cap on concurrent client TCP connection tasks across all listeners.
 ///
 /// Sized for OpenWrt routers (typical 128–512 MiB RAM, default `ulimit -n` 1024):
@@ -73,22 +85,27 @@ use tokio::time::{Duration, timeout};
 /// BIND9 `tcp-clients` 150 / dnsmasq 150).
 pub const DEFAULT_MAX_TCP_CONNECTIONS: usize = 128;
 
-/// Application-level TCP admission counters observed by tests via `watch`.
+/// Application-level admission counters observed by tests via `watch`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
-pub struct TcpAdmissionStats {
+pub struct AdmissionStats {
     pub admitted: usize,
     pub active: usize,
     pub peak_active: usize,
     pub rejected: usize,
 }
 
-struct TcpPermit {
+#[allow(dead_code)]
+pub type TcpAdmissionStats = AdmissionStats;
+#[allow(dead_code)]
+pub type UdpAdmissionStats = AdmissionStats;
+
+struct AdmissionPermit {
     permit: Option<OwnedSemaphorePermit>,
-    stats: Option<watch::Sender<TcpAdmissionStats>>,
+    stats: Option<watch::Sender<AdmissionStats>>,
 }
 
-impl Drop for TcpPermit {
+impl Drop for AdmissionPermit {
     fn drop(&mut self) {
         // Release the semaphore permit before notifying observers of `active` drop.
         drop(self.permit.take());
@@ -142,12 +159,14 @@ pub async fn run_with_cache_clock(
     ip_writer: Arc<dyn IpWriter>,
     clock: Arc<dyn cache::Clock>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    run_with_tcp_limit(
+    run_with_limits(
         config,
         shutdown,
         ip_test,
         ip_writer,
         clock,
+        DEFAULT_MAX_UDP_QUERIES,
+        None,
         DEFAULT_MAX_TCP_CONNECTIONS,
         None,
     )
@@ -158,10 +177,37 @@ pub async fn run_with_cache_clock(
 #[allow(dead_code)]
 pub async fn run_with_tcp_limit(
     config: Config,
+    shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
+    clock: Arc<dyn cache::Clock>,
+    max_tcp_connections: usize,
+    tcp_stats: Option<watch::Sender<TcpAdmissionStats>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_limits(
+        config,
+        shutdown,
+        ip_test,
+        ip_writer,
+        clock,
+        DEFAULT_MAX_UDP_QUERIES,
+        None,
+        max_tcp_connections,
+        tcp_stats,
+    )
+    .await
+}
+
+/// Injection point for deterministic UDP/TCP admission tests with small shared quotas.
+#[allow(dead_code, clippy::too_many_arguments)]
+pub async fn run_with_limits(
+    config: Config,
     mut shutdown: watch::Receiver<bool>,
     ip_test: Arc<dyn IpTest>,
     ip_writer: Arc<dyn IpWriter>,
     clock: Arc<dyn cache::Clock>,
+    max_udp_queries: usize,
+    udp_stats: Option<watch::Sender<UdpAdmissionStats>>,
     max_tcp_connections: usize,
     tcp_stats: Option<watch::Sender<TcpAdmissionStats>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -198,10 +244,17 @@ pub async fn run_with_tcp_limit(
         ip_writer,
     });
     let mut tasks = JoinSet::new();
+    // All UDP listeners share one permit pool, independent of TCP permits.
+    // Permits are acquired via try_acquire_owned after recv_from() and before
+    // copying the datagram or spawning a query task, so idle listeners hold
+    // zero permits and overload drops immediately without queuing or logging.
+    let udp_permits = Arc::new(Semaphore::new(max_udp_queries));
     for socket in sockets {
         println!("listening UDP {}", socket.local_addr()?);
         let upstream = upstream.clone();
         let mut shutdown = shutdown.clone();
+        let udp_permits = udp_permits.clone();
+        let udp_stats = udp_stats.clone();
         tasks.spawn(async move {
             let mut queries = JoinSet::new();
             let mut buffer = vec![0; 65535];
@@ -220,10 +273,28 @@ pub async fn run_with_tcp_limit(
                         continue;
                     }
                 };
-                let query = buffer[..len].to_vec();
-                if dns::check_query(&query).is_err() {
+                let packet = &buffer[..len];
+                if dns::check_query(packet).is_err() {
                     continue;
                 }
+                let Ok(permit) = udp_permits.clone().try_acquire_owned() else {
+                    if let Some(stats) = &udp_stats {
+                        stats.send_modify(|s| s.rejected += 1);
+                    }
+                    continue;
+                };
+                if let Some(stats) = &udp_stats {
+                    stats.send_modify(|s| {
+                        s.admitted += 1;
+                        s.active += 1;
+                        s.peak_active = s.peak_active.max(s.active);
+                    });
+                }
+                let permit = AdmissionPermit {
+                    permit: Some(permit),
+                    stats: udp_stats.clone(),
+                };
+                let query = packet.to_vec();
                 let client_id = u16::from_be_bytes([query[0], query[1]]);
                 next_id = next_id.wrapping_add(1);
                 if next_id == client_id {
@@ -233,6 +304,7 @@ pub async fn run_with_tcp_limit(
                 let socket = socket.clone();
                 let upstream = upstream.clone();
                 queries.spawn(async move {
+                    let _permit = permit;
                     let udp_budget = dns::udp_budget(&query);
                     if let Some(mut response) =
                         handle_query(&upstream, query, client_id, id, Protocol::Udp, peer).await
@@ -288,7 +360,7 @@ pub async fn run_with_tcp_limit(
                         s.peak_active = s.peak_active.max(s.active);
                     });
                 }
-                let permit = TcpPermit {
+                let permit = AdmissionPermit {
                     permit: Some(permit),
                     stats: tcp_stats.clone(),
                 };
