@@ -25,6 +25,7 @@ struct Routing {
     cache: std::sync::Mutex<cache::Cache>,
     clock: Arc<dyn cache::Clock>,
     refresh_tasks: std::sync::Mutex<Option<JoinSet<()>>>,
+    upstream_limiter: upstream_group::UpstreamLimiter,
     config: Config,
     router: Router,
     ip_test: Arc<dyn IpTest>,
@@ -98,6 +99,8 @@ pub struct AdmissionStats {
 pub type TcpAdmissionStats = AdmissionStats;
 #[allow(dead_code)]
 pub type UdpAdmissionStats = AdmissionStats;
+#[allow(dead_code)]
+pub use crate::upstream_group::{DEFAULT_MAX_UPSTREAM_ATTEMPTS, UpstreamAdmissionStats};
 
 struct AdmissionPermit {
     permit: Option<OwnedSemaphorePermit>,
@@ -201,6 +204,62 @@ pub async fn run_with_tcp_limit(
 #[allow(dead_code, clippy::too_many_arguments)]
 pub async fn run_with_limits(
     config: Config,
+    shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
+    clock: Arc<dyn cache::Clock>,
+    max_udp_queries: usize,
+    udp_stats: Option<watch::Sender<UdpAdmissionStats>>,
+    max_tcp_connections: usize,
+    tcp_stats: Option<watch::Sender<TcpAdmissionStats>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_all_limits(
+        config,
+        shutdown,
+        ip_test,
+        ip_writer,
+        clock,
+        max_udp_queries,
+        udp_stats,
+        max_tcp_connections,
+        tcp_stats,
+        DEFAULT_MAX_UPSTREAM_ATTEMPTS,
+        None,
+    )
+    .await
+}
+
+/// Injection point for deterministic upstream-attempt admission tests with a small shared quota.
+#[allow(dead_code)]
+pub async fn run_with_upstream_limit(
+    config: Config,
+    shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
+    clock: Arc<dyn cache::Clock>,
+    max_upstream_attempts: usize,
+    upstream_stats: Option<watch::Sender<UpstreamAdmissionStats>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_with_all_limits(
+        config,
+        shutdown,
+        ip_test,
+        ip_writer,
+        clock,
+        DEFAULT_MAX_UDP_QUERIES,
+        None,
+        DEFAULT_MAX_TCP_CONNECTIONS,
+        None,
+        max_upstream_attempts,
+        upstream_stats,
+    )
+    .await
+}
+
+/// Injection point for deterministic admission tests across UDP, TCP, and upstream attempts.
+#[allow(dead_code, clippy::too_many_arguments)]
+pub async fn run_with_all_limits(
+    config: Config,
     mut shutdown: watch::Receiver<bool>,
     ip_test: Arc<dyn IpTest>,
     ip_writer: Arc<dyn IpWriter>,
@@ -209,6 +268,8 @@ pub async fn run_with_limits(
     udp_stats: Option<watch::Sender<UdpAdmissionStats>>,
     max_tcp_connections: usize,
     tcp_stats: Option<watch::Sender<TcpAdmissionStats>>,
+    max_upstream_attempts: usize,
+    upstream_stats: Option<watch::Sender<UpstreamAdmissionStats>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     config.validate_startup()?;
     let router = Router::load(&config);
@@ -237,6 +298,10 @@ pub async fn run_with_limits(
         verdict: std::sync::Mutex::new(verdict::VerdictCache::new(config.verdict_cache)),
         clock,
         refresh_tasks: std::sync::Mutex::new(Some(JoinSet::new())),
+        upstream_limiter: upstream_group::UpstreamLimiter::new(
+            max_upstream_attempts,
+            upstream_stats,
+        ),
         config,
         router,
         ip_test,
@@ -457,7 +522,9 @@ async fn handle_query(
     match forward(upstream, &mut query, client_id, client_protocol).await {
         Ok(response) => Some(response),
         Err(error) => {
-            println!("upstream failed for client {peer}: {error}");
+            if error.kind() != std::io::ErrorKind::WouldBlock {
+                println!("upstream failed for client {peer}: {error}");
+            }
             let mut response = original;
             dns::synthetic_nodata(&mut response).ok()?;
             response[3] = (response[3] & 0xf0) | 2;
@@ -522,7 +589,13 @@ async fn exchange_response(
     let mut response = if tag == RouteTag::None {
         none_exchange(upstream, query, qtype, client_protocol).await?
     } else {
-        upstream_group::exchange(upstream.upstreams(tag), query, client_protocol).await?
+        upstream_group::exchange_with_limit(
+            upstream.upstreams(tag),
+            query,
+            client_protocol,
+            &upstream.upstream_limiter,
+        )
+        .await?
     };
     dns::set_ra(&mut response).map_err(wire_error)?;
     if matches!(dns::rcode(&response).map_err(wire_error)?, 0 | 3) && response[2] & 2 == 0 {
@@ -566,7 +639,13 @@ async fn none_exchange(
             .chain(&config.trust_dns)
             .cloned()
             .collect();
-        return upstream_group::exchange(&all, query, protocol).await;
+        return upstream_group::exchange_with_limit(
+            &all,
+            query,
+            protocol,
+            &routing.upstream_limiter,
+        )
+        .await;
     }
     let qname_end = dns::skip_name(query, 12).map_err(wire_error)?;
     let qname = &query[12..qname_end];
@@ -578,16 +657,44 @@ async fn none_exchange(
             &config.trust_dns
         };
         // A cached verdict is authoritative: failure must not query the other side.
-        return upstream_group::exchange(side, query, protocol).await;
+        return upstream_group::exchange_with_limit(
+            side,
+            query,
+            protocol,
+            &routing.upstream_limiter,
+        )
+        .await;
     }
     if config.china_dns.is_empty() {
-        return upstream_group::exchange(&config.trust_dns, query, protocol).await;
+        return upstream_group::exchange_with_limit(
+            &config.trust_dns,
+            query,
+            protocol,
+            &routing.upstream_limiter,
+        )
+        .await;
     }
     if config.trust_dns.is_empty() {
-        return upstream_group::exchange(&config.china_dns, query, protocol).await;
+        return upstream_group::exchange_with_limit(
+            &config.china_dns,
+            query,
+            protocol,
+            &routing.upstream_limiter,
+        )
+        .await;
     }
-    let china = upstream_group::exchange(&config.china_dns, query, protocol.clone());
-    let trust = upstream_group::exchange(&config.trust_dns, query, protocol);
+    let china = upstream_group::exchange_with_limit(
+        &config.china_dns,
+        query,
+        protocol.clone(),
+        &routing.upstream_limiter,
+    );
+    let trust = upstream_group::exchange_with_limit(
+        &config.trust_dns,
+        query,
+        protocol,
+        &routing.upstream_limiter,
+    );
     tokio::pin!(china, trust);
     tokio::select! {
         china_result = &mut china => {
