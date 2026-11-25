@@ -174,11 +174,11 @@ pub async fn run_with_cache_clock(
                 let socket = socket.clone();
                 let upstream = upstream.clone();
                 queries.spawn(async move {
-                    let udp_limit = dns::udp_payload_limit(&query);
+                    let udp_budget = dns::udp_budget(&query);
                     if let Some(mut response) =
                         handle_query(&upstream, query, client_id, id, Protocol::Udp, peer).await
                     {
-                        dns::enforce_udp_limit(&mut response, udp_limit);
+                        dns::enforce_udp_limit(&mut response, udp_budget);
                         send(&socket, peer, &response).await;
                     }
                 });
@@ -370,7 +370,7 @@ async fn exchange_response(
         upstream_group::exchange(upstream.upstreams(tag), query, client_protocol).await?
     };
     dns::set_ra(&mut response).map_err(wire_error)?;
-    if matches!(response[3] & 0x0f, 0 | 3) && response[2] & 2 == 0 {
+    if matches!(dns::rcode(&response).map_err(wire_error)?, 0 | 3) && response[2] & 2 == 0 {
         dns::truncate_additional(&mut response).map_err(wire_error)?;
     }
     Ok(response)

@@ -112,7 +112,12 @@ fn roundtrip(qtype: u16, edns: bool, tcp: bool, flags: u8, rcode: u8) {
     expected[3] |= 0x80;
     if matches!(rcode, 0 | 3) && flags & 2 == 0 {
         expected.truncate(expected.len() - 11);
-        expected[11] = 0;
+        if edns {
+            expected[11] = 1;
+            expected.extend_from_slice(&[0, 0, 41, 2, 0, 0, 0, 0, 0, 0, 0]);
+        } else {
+            expected[11] = 0;
+        }
     }
     assert_eq!(
         response, expected,
@@ -154,8 +159,9 @@ fn timeout() {
     assert!(start.elapsed() >= Duration::from_secs(5));
     assert_eq!(&response[..2], &query[..2]);
     assert_eq!(response[3] & 0x8f, 0x82);
-    assert_eq!(&response[6..12], &[0; 6]);
-    assert_eq!(&response[12..], &query[12..32]);
+    assert_eq!(&response[6..12], &[0, 0, 0, 0, 0, 1]);
+    assert_eq!(&response[12..32], &query[12..32]);
+    assert_eq!(&response[32..], &[0, 0, 41, 2, 0, 0, 0, 0, 0, 0, 0]);
     upstream.set_nonblocking(true).unwrap();
     let mut buffer = [0; 512];
     upstream.recv(&mut buffer).unwrap();

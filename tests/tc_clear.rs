@@ -132,6 +132,10 @@ async fn check(tcp: bool, qtype: u16, no_ipv6: bool, filter: bool) {
     expected[2] = 0x81 | if blocked { 0 } else { 4 };
     expected[3] = 0x90;
     expected[6..12].fill(0);
+    if !tcp {
+        expected[11] = 1;
+        expected.extend_from_slice(&[0, 0, 41, 2, 0, 0, 0, 0, 0, 0, 0]);
+    }
     assert_eq!(
         response, expected,
         "TC cleared, ID/question/RD/CD preserved; NODATA"

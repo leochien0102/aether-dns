@@ -123,6 +123,10 @@ async fn check(tcp: bool, qtype: u16, no_ipv6: bool, filter: Vec<u16>, blocked: 
     expected[2] |= 0x80 | if blocked { 0 } else { 4 };
     expected[3] |= 0x80;
     expected[6..12].fill(0);
+    if !tcp {
+        expected[11] = 1;
+        expected.extend_from_slice(&[0, 0, 41, 2, 0, 0, 0, 0, 0, 0, 0]);
+    }
     assert_eq!(
         response, expected,
         "ID/question/flags and QR/RA/qd=1/an=ns=ar=0"
