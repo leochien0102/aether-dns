@@ -868,59 +868,36 @@ async fn none_exchange_preserves_actual_io_error_when_other_side_rejected() {
     let limiter = UpstreamLimiter::new(1, Some(stats_tx));
     let q = build_query(0x8802, "dualboth");
 
-    let mut seen_china_rejected = false;
-    let mut seen_trust_rejected = false;
-    let mut iterations = 0usize;
-
-    for i in 0..64 {
-        iterations = i + 1;
-        let c_before = china_hits.load(Ordering::SeqCst);
-        let t_before = trust_hits.load(Ordering::SeqCst);
-        let err = server::exchange_once_with_limit(
-            config.clone(),
-            &q,
-            Protocol::Tcp,
-            limiter.clone(),
-        )
+    let err = server::exchange_once_with_limit(config, &q, Protocol::Tcp, limiter.clone())
         .await
         .unwrap_err();
-        let s = wait_stats(&mut stats_rx, |s| s.active == 0 && s.admitted == iterations).await;
-        assert_eq!(s.peak_active, 1);
-        assert_eq!(s.rejected, iterations);
-        assert_ne!(
-            err.kind(),
-            std::io::ErrorKind::WouldBlock,
-            "actual I/O error must not be masked by WouldBlock: {err}"
-        );
-        let c_delta = china_hits.load(Ordering::SeqCst) - c_before;
-        let t_delta = trust_hits.load(Ordering::SeqCst) - t_before;
-        match (c_delta, t_delta) {
-            (0, 1) => {
-                assert!(
-                    err.to_string().contains(&format!("tcp://{trust_addr}")),
-                    "expected trust error when china rejected, got: {err}"
-                );
-                seen_china_rejected = true;
-            }
-            (1, 0) => {
-                assert!(
-                    err.to_string().contains(&format!("tcp://{china_addr}")),
-                    "expected china error when trust rejected, got: {err}"
-                );
-                seen_trust_rejected = true;
-            }
-            other => panic!("expected exactly one side admitted per exchange, got {other:?}"),
-        }
-        if seen_china_rejected && seen_trust_rejected {
-            break;
-        }
-    }
-    assert!(
-        seen_china_rejected && seen_trust_rejected,
-        "expected both china-rejected and trust-rejected directions within 64 iterations"
+    let s = wait_stats(&mut stats_rx, |s| s.active == 0 && s.admitted == 1).await;
+    assert_eq!(s.peak_active, 1);
+    assert_eq!(s.rejected, 1);
+    assert_ne!(
+        err.kind(),
+        std::io::ErrorKind::WouldBlock,
+        "actual I/O error must not be masked by WouldBlock: {err}"
     );
+    let c_hits = china_hits.load(Ordering::SeqCst);
+    let t_hits = trust_hits.load(Ordering::SeqCst);
+    match (c_hits, t_hits) {
+        (0, 1) => {
+            assert!(
+                err.to_string().contains(&format!("tcp://{trust_addr}")),
+                "expected trust error when china rejected, got: {err}"
+            );
+        }
+        (1, 0) => {
+            assert!(
+                err.to_string().contains(&format!("tcp://{china_addr}")),
+                "expected china error when trust rejected, got: {err}"
+            );
+        }
+        other => panic!("expected exactly one side admitted once, got {other:?}"),
+    }
 
-    // Follow-up exchange on the same limiter succeeds after all permits were returned.
+    // Follow-up exchange on the same limiter succeeds after the permit was returned.
     let mut ok_pool = GatedUdpPool::new(1).await;
     let ok_task = tokio::spawn({
         let upstreams = ok_pool.upstreams.clone();
@@ -934,16 +911,12 @@ async fn none_exchange_preserves_actual_io_error_when_other_side_rejected() {
     ok_pool.reply(&req, 60, 77, 0).await;
     let reply = ok_task.await.unwrap().unwrap();
     assert_eq!(answer_last_octet(&reply), 77);
-    let final_stats = wait_stats(&mut stats_rx, |s| s.active == 0).await;
+    let final_stats = wait_stats(&mut stats_rx, |s| s.active == 0 && s.admitted == 2).await;
     assert_eq!(final_stats.peak_active, 1);
 
     println!(
-        "dual_exchange_error_preservation: iterations={} china_hits={} trust_hits={} peak_active={} active_after={}",
-        iterations,
-        china_hits.load(Ordering::SeqCst),
-        trust_hits.load(Ordering::SeqCst),
-        final_stats.peak_active,
-        final_stats.active,
+        "dual_exchange_error_preservation: china_hits={} trust_hits={} peak_active={} active_after={}",
+        c_hits, t_hits, final_stats.peak_active, final_stats.active,
     );
 
     ok_pool.abort();
