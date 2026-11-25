@@ -24,6 +24,7 @@ struct Routing {
     verdict: std::sync::Mutex<verdict::VerdictCache>,
     cache: std::sync::Mutex<cache::Cache>,
     clock: Arc<dyn cache::Clock>,
+    id_source: Arc<dyn UpstreamIdSource>,
     refresh_tasks: std::sync::Mutex<Option<JoinSet<()>>>,
     upstream_limiter: upstream_group::UpstreamLimiter,
     config: Config,
@@ -101,6 +102,68 @@ pub type TcpAdmissionStats = AdmissionStats;
 pub type UdpAdmissionStats = AdmissionStats;
 #[allow(dead_code)]
 pub use crate::upstream_group::{DEFAULT_MAX_UPSTREAM_ATTEMPTS, UpstreamAdmissionStats};
+
+const MAX_ID_COLLISION_RETRIES: usize = 16;
+
+/// Source of unpredictable 16-bit upstream DNS transaction IDs.
+pub trait UpstreamIdSource: Send + Sync {
+    fn next_u16(&self) -> std::io::Result<u16>;
+}
+
+/// Production ID source backed directly by the Linux kernel CSPRNG (`getrandom(2)`).
+/// Never falls back to a counter, timestamp, or other predictable value on failure.
+#[derive(Default)]
+pub struct OsRandomIdSource;
+
+impl UpstreamIdSource for OsRandomIdSource {
+    fn next_u16(&self) -> std::io::Result<u16> {
+        let mut bytes = [0u8; 2];
+        let mut filled = 0;
+        while filled < bytes.len() {
+            let ret = unsafe {
+                libc::getrandom(
+                    bytes.as_mut_ptr().add(filled) as *mut libc::c_void,
+                    bytes.len() - filled,
+                    0,
+                )
+            };
+            if ret < 0 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(err);
+            }
+            if ret == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "getrandom returned 0 bytes",
+                ));
+            }
+            filled += ret as usize;
+        }
+        Ok(u16::from_be_bytes(bytes))
+    }
+}
+
+/// Draw a 16-bit upstream transaction ID from `source`, redrawing if it
+/// collides with `avoid_id` (the client's transaction ID). Fails closed on
+/// source error or if bounded retries are exhausted; never degrades to a
+/// predictable fallback.
+pub fn select_upstream_id(
+    source: &dyn UpstreamIdSource,
+    avoid_id: Option<u16>,
+) -> std::io::Result<u16> {
+    for _ in 0..MAX_ID_COLLISION_RETRIES {
+        let id = source.next_u16()?;
+        if Some(id) != avoid_id {
+            return Ok(id);
+        }
+    }
+    Err(std::io::Error::other(
+        "upstream ID source repeatedly collided with client ID",
+    ))
+}
 
 struct AdmissionPermit {
     permit: Option<OwnedSemaphorePermit>,
@@ -256,14 +319,73 @@ pub async fn run_with_upstream_limit(
     .await
 }
 
+/// Injection point for deterministic upstream transaction ID tests.
+#[allow(dead_code)]
+pub async fn run_with_id_source(
+    config: Config,
+    shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
+    clock: Arc<dyn cache::Clock>,
+    id_source: Arc<dyn UpstreamIdSource>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_inner(
+        config,
+        shutdown,
+        ip_test,
+        ip_writer,
+        clock,
+        id_source,
+        DEFAULT_MAX_UDP_QUERIES,
+        None,
+        DEFAULT_MAX_TCP_CONNECTIONS,
+        None,
+        DEFAULT_MAX_UPSTREAM_ATTEMPTS,
+        None,
+    )
+    .await
+}
+
 /// Injection point for deterministic admission tests across UDP, TCP, and upstream attempts.
 #[allow(dead_code, clippy::too_many_arguments)]
 pub async fn run_with_all_limits(
+    config: Config,
+    shutdown: watch::Receiver<bool>,
+    ip_test: Arc<dyn IpTest>,
+    ip_writer: Arc<dyn IpWriter>,
+    clock: Arc<dyn cache::Clock>,
+    max_udp_queries: usize,
+    udp_stats: Option<watch::Sender<UdpAdmissionStats>>,
+    max_tcp_connections: usize,
+    tcp_stats: Option<watch::Sender<TcpAdmissionStats>>,
+    max_upstream_attempts: usize,
+    upstream_stats: Option<watch::Sender<UpstreamAdmissionStats>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    run_inner(
+        config,
+        shutdown,
+        ip_test,
+        ip_writer,
+        clock,
+        Arc::new(OsRandomIdSource),
+        max_udp_queries,
+        udp_stats,
+        max_tcp_connections,
+        tcp_stats,
+        max_upstream_attempts,
+        upstream_stats,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_inner(
     config: Config,
     mut shutdown: watch::Receiver<bool>,
     ip_test: Arc<dyn IpTest>,
     ip_writer: Arc<dyn IpWriter>,
     clock: Arc<dyn cache::Clock>,
+    id_source: Arc<dyn UpstreamIdSource>,
     max_udp_queries: usize,
     udp_stats: Option<watch::Sender<UdpAdmissionStats>>,
     max_tcp_connections: usize,
@@ -297,6 +419,7 @@ pub async fn run_with_all_limits(
         cache: std::sync::Mutex::new(cache::Cache::new(config.cache, config.cache_stale)),
         verdict: std::sync::Mutex::new(verdict::VerdictCache::new(config.verdict_cache)),
         clock,
+        id_source,
         refresh_tasks: std::sync::Mutex::new(Some(JoinSet::new())),
         upstream_limiter: upstream_group::UpstreamLimiter::new(
             max_upstream_attempts,
@@ -322,7 +445,6 @@ pub async fn run_with_all_limits(
         tasks.spawn(async move {
             let mut queries = JoinSet::new();
             let mut buffer = vec![0; 65535];
-            let mut next_id = 0u16;
             loop {
                 let received = tokio::select! {
                     biased;
@@ -360,18 +482,13 @@ pub async fn run_with_all_limits(
                 };
                 let query = packet.to_vec();
                 let client_id = u16::from_be_bytes([query[0], query[1]]);
-                next_id = next_id.wrapping_add(1);
-                if next_id == client_id {
-                    next_id = next_id.wrapping_add(1);
-                }
-                let id = next_id;
                 let socket = socket.clone();
                 let upstream = upstream.clone();
                 queries.spawn(async move {
                     let _permit = permit;
                     let udp_budget = dns::udp_budget(&query);
                     if let Some(mut response) =
-                        handle_query(&upstream, query, client_id, id, Protocol::Udp, peer).await
+                        handle_query(&upstream, query, client_id, Protocol::Udp, peer).await
                     {
                         dns::enforce_udp_limit(&mut response, udp_budget);
                         send(&socket, peer, &response).await;
@@ -395,7 +512,6 @@ pub async fn run_with_all_limits(
         let tcp_stats = tcp_stats.clone();
         tasks.spawn(async move {
             let mut queries = JoinSet::new();
-            let mut next_id = 0u16;
             loop {
                 let accepted = tokio::select! {
                     biased;
@@ -428,13 +544,11 @@ pub async fn run_with_all_limits(
                     permit: Some(permit),
                     stats: tcp_stats.clone(),
                 };
-                next_id = next_id.wrapping_add(1);
-                let id = next_id;
                 let upstream = upstream.clone();
                 let shutdown = shutdown.clone();
                 queries.spawn(async move {
                     let _permit = permit;
-                    if let Err(error) = tcp_query(stream, &upstream, id, peer, shutdown).await {
+                    if let Err(error) = tcp_query(stream, &upstream, peer, shutdown).await {
                         eprintln!("TCP client {peer}: {error}");
                     }
                 });
@@ -462,7 +576,6 @@ pub async fn run_with_all_limits(
 async fn tcp_query(
     mut stream: TcpStream,
     upstream: &Arc<Routing>,
-    mut id: u16,
     peer: SocketAddr,
     mut shutdown: watch::Receiver<bool>,
 ) -> std::io::Result<()> {
@@ -486,11 +599,7 @@ async fn tcp_query(
         return Ok(());
     }
     let client_id = u16::from_be_bytes([query[0], query[1]]);
-    if id == client_id {
-        id = id.wrapping_add(1);
-    }
-    if let Some(response) = handle_query(upstream, query, client_id, id, Protocol::Tcp, peer).await
-    {
+    if let Some(response) = handle_query(upstream, query, client_id, Protocol::Tcp, peer).await {
         stream.write_u16(response.len() as u16).await?;
         stream.write_all(&response).await?;
     }
@@ -501,7 +610,6 @@ async fn handle_query(
     upstream: &Arc<Routing>,
     mut query: Vec<u8>,
     client_id: u16,
-    id: u16,
     client_protocol: Protocol,
     peer: SocketAddr,
 ) -> Option<Vec<u8>> {
@@ -517,9 +625,7 @@ async fn handle_query(
         return Some(query);
     }
     let original = query.clone();
-    // Callers check the query before rewriting its ID.
-    dns::set_id(&mut query, id).expect("checked header");
-    match forward(upstream, &mut query, client_id, client_protocol).await {
+    match forward(upstream, &query, client_id, client_protocol).await {
         Ok(response) => Some(response),
         Err(error) => {
             if error.kind() != std::io::ErrorKind::WouldBlock {
@@ -535,7 +641,7 @@ async fn handle_query(
 
 async fn forward(
     upstream: &Arc<Routing>,
-    query: &mut [u8],
+    query: &[u8],
     client_id: u16,
     client_protocol: Protocol,
 ) -> std::io::Result<Vec<u8>> {
@@ -555,7 +661,8 @@ async fn forward(
             if let Some(tasks) = tasks.as_mut() {
                 while tasks.try_join_next().is_some() {}
                 tasks.spawn(async move {
-                    let response = exchange_response(&routing, &query, client_protocol).await;
+                    let response =
+                        exchange_response(&routing, &query, Some(client_id), client_protocol).await;
                     routing.cache.lock().unwrap().finish_refresh(
                         &query,
                         response.as_deref().ok(),
@@ -568,7 +675,7 @@ async fn forward(
         ip_writer::write_reply(&upstream.config, tag, &response, &*upstream.ip_writer);
         return Ok(response);
     }
-    let mut response = exchange_response(upstream, query, client_protocol).await?;
+    let mut response = exchange_response(upstream, query, Some(client_id), client_protocol).await?;
     dns::set_id(&mut response, client_id).map_err(wire_error)?;
     upstream
         .cache
@@ -580,18 +687,23 @@ async fn forward(
 }
 
 /// Shared route/exchange and normalization; never consult the answer cache here.
+/// Every logical upstream query allocates a fresh unpredictable 16-bit ID here.
 async fn exchange_response(
     upstream: &Routing,
     query: &[u8],
+    avoid_id: Option<u16>,
     client_protocol: Protocol,
 ) -> std::io::Result<Vec<u8>> {
     let (tag, qtype) = upstream.route(query)?;
+    let upstream_id = select_upstream_id(&*upstream.id_source, avoid_id)?;
+    let mut upstream_query = query.to_vec();
+    dns::set_id(&mut upstream_query, upstream_id).map_err(wire_error)?;
     let mut response = if tag == RouteTag::None {
-        none_exchange(upstream, query, qtype, client_protocol).await?
+        none_exchange(upstream, &upstream_query, qtype, client_protocol).await?
     } else {
         upstream_group::exchange_with_limit(
             upstream.upstreams(tag),
-            query,
+            &upstream_query,
             client_protocol,
             &upstream.upstream_limiter,
         )
@@ -754,6 +866,7 @@ pub async fn exchange_once_with_limit(
         verdict: std::sync::Mutex::new(verdict::VerdictCache::new(config.verdict_cache)),
         cache: std::sync::Mutex::new(cache::Cache::new(config.cache, config.cache_stale)),
         clock: Arc::new(cache::MonotonicClock::default()),
+        id_source: Arc::new(OsRandomIdSource),
         refresh_tasks: std::sync::Mutex::new(None),
         upstream_limiter: limiter,
         config,
@@ -761,7 +874,8 @@ pub async fn exchange_once_with_limit(
         ip_test: Arc::new(NftIpTest::new(None)),
         ip_writer: Arc::new(NoopWriter),
     };
-    exchange_response(&routing, query, client_protocol).await
+    let avoid_id = query.get(..2).map(|b| u16::from_be_bytes([b[0], b[1]]));
+    exchange_response(&routing, query, avoid_id, client_protocol).await
 }
 
 fn wire_error(_: dns::WireError) -> std::io::Error {
