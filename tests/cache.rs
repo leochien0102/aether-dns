@@ -347,11 +347,10 @@ fn expired_entries_miss_and_stale_zero_still_allows_refresh_ahead() {
 
 #[test]
 fn refresh_limit_is_four_and_released_after_failure() {
-    let (mut cache, clock, q) = unit_cache(20, 10);
-    let r = response(&q, Reply::default());
+    let (mut cache, clock, _) = unit_cache(20, 10);
     let queries: Vec<_> = (b'a'..=b'e').map(|name| query(name, 1, 1, 42)).collect();
     for q in &queries {
-        assert!(cache.add(q, &r, clock.now()));
+        assert!(cache.add(q, &response(q, Reply::default()), clock.now()));
     }
     clock.at(10000);
     for q in &queries[..4] {
@@ -388,7 +387,12 @@ fn rejected_refresh_replies_never_overwrite_old_entry() {
     }
 }
 
-fn reply_with_ttls(q: &[u8], answer_ttls: &[u32], authority_ttl: Option<u32>, opt_ttl: Option<u32>) -> Vec<u8> {
+fn reply_with_ttls(
+    q: &[u8],
+    answer_ttls: &[u32],
+    authority_ttl: Option<u32>,
+    opt_ttl: Option<u32>,
+) -> Vec<u8> {
     let mut r = q.to_vec();
     r[2] = 0x81;
     r[3] = 0x80;
@@ -439,9 +443,15 @@ fn opt_pseudo_ttl_zero_is_not_treated_as_answer_ttl() {
     let r = reply_with_ttls(&q, &[10], Some(0), Some(0));
     let mut cache = server::cache::Cache::new(Some(8), Some(5));
     assert!(cache.add(&q, &r, Duration::ZERO));
-    assert_eq!(ttls(&cache.get(&q, Duration::from_secs(4)).unwrap()), &[6, 0]);
+    assert_eq!(
+        ttls(&cache.get(&q, Duration::from_secs(4)).unwrap()),
+        &[6, 0]
+    );
     assert!(!cache.begin_refresh(&q, Duration::from_secs(4)));
-    assert_eq!(ttls(&cache.get(&q, Duration::from_secs(10)).unwrap()), &[0, 0]);
+    assert_eq!(
+        ttls(&cache.get(&q, Duration::from_secs(10)).unwrap()),
+        &[0, 0]
+    );
     assert!(cache.begin_refresh(&q, Duration::from_secs(10)));
 }
 
@@ -536,9 +546,9 @@ async fn hit_restores_id_and_normalization() {
     h.stop().await;
 }
 #[tokio::test]
-async fn raw_question_name_type_class_are_distinct_keys() {
+async fn question_type_class_are_distinct_keys() {
     let h = Harness::new(Some(8), 5, Reply::default(), |_| {}).await;
-    for (i, (name, kind, class)) in [(b'x', 1, 1), (b'X', 1, 1), (b'x', 28, 1), (b'x', 1, 3)]
+    for (i, (name, kind, class)) in [(b'x', 1, 1), (b'y', 1, 1), (b'x', 28, 1), (b'x', 1, 3)]
         .into_iter()
         .enumerate()
     {
@@ -548,6 +558,200 @@ async fn raw_question_name_type_class_are_distinct_keys() {
     h.ask(&query(b'x', 1, 1, 99), false, 4, INITIAL).await;
     h.stop().await;
 }
+// T16.101: fresh answer hits, not just verdict reuse.
+#[tokio::test]
+async fn answer_case_fresh_hits_echo_each_question_without_upstream() {
+    let h = standard(5).await;
+    for i in 0..8 {
+        h.clock.at(i * 500);
+        let q = query(if i % 2 == 0 { b'x' } else { b'X' }, 1, 1, 100 + i as u16);
+        let elapsed = (i / 2) as u32;
+        let r = h
+            .ask(
+                &q,
+                i % 2 != 0,
+                1,
+                &[10 - elapsed, 30 - elapsed, 50 - elapsed],
+            )
+            .await;
+        assert_eq!(&r[12..q.len()], &q[12..]);
+        assert_eq!(&r[q.len()..q.len() + 2], &[0xc0, 12]);
+        assert_eq!(
+            dns::inspect(&r).unwrap().answers,
+            vec![
+                ("1.2.3.4".parse::<IpAddr>().unwrap(), 10 - elapsed),
+                ("2001:db8::2".parse().unwrap(), 30 - elapsed)
+            ]
+        );
+    }
+    h.stop().await;
+}
+
+fn named_question(name: &[u8], kind: u16, class: u16) -> Vec<u8> {
+    let mut q = query(b'x', kind, class, 42);
+    q.splice(12..15, name.iter().copied());
+    q
+}
+
+#[test]
+fn answer_case_alternating_echo_preserves_compression_and_ttls() {
+    let q = named_question(b"\x03FoO\x03BaR\0", 1, 1);
+    let variant = named_question(b"\x03fOo\x03bAr\0", 1, 1);
+    let mut r = response(&q, Reply::default());
+    dns::truncate_additional(&mut r).unwrap();
+    let mut cache = server::cache::Cache::new(Some(1), Some(5));
+    assert!(cache.add(&q, &r, Duration::ZERO));
+    for i in 0..8 {
+        let mut current = if i % 2 == 0 {
+            q.clone()
+        } else {
+            variant.clone()
+        };
+        current[..2].copy_from_slice(&(100 + i as u16).to_be_bytes());
+        let now = Duration::from_secs(i);
+        let hit = cache
+            .get(&current, now)
+            .expect("case variant shares answer");
+        let mut expected = r.clone();
+        expected[..2].copy_from_slice(&current[..2]);
+        expected[12..current.len()].copy_from_slice(&current[12..]);
+        for (at, ttl) in [
+            (q.len() + 6, 10 - i as u32),
+            (q.len() + 22, 30 - i as u32),
+            (q.len() + 50, 50 - i as u32),
+        ] {
+            expected[at..at + 4].copy_from_slice(&ttl.to_be_bytes());
+        }
+        assert_eq!(hit, expected, "only ID, Question and TTL may change");
+        assert_eq!(
+            ttls(&hit),
+            vec![10 - i as u32, 30 - i as u32, 50 - i as u32]
+        );
+    }
+}
+
+#[test]
+fn answer_case_keys_preserve_numeric_fields_non_ascii_and_label_boundaries() {
+    for (a, b) in [
+        (query(b'x', 0x41, 1, 42), query(b'X', 0x61, 1, 42)),
+        (query(b'x', 1, 0x41, 42), query(b'X', 1, 0x61, 42)),
+        (
+            named_question(b"\x03\xc3\x89A\0", 1, 1),
+            named_question(b"\x03\xc3\xa9a\0", 1, 1),
+        ),
+        (
+            named_question(b"\x03A.B\0", 1, 1),
+            named_question(b"\x01a\x01b\0", 1, 1),
+        ),
+        (
+            named_question(b"\x03A\0B\0", 1, 1),
+            named_question(b"\x01a\0", 1, 1),
+        ),
+    ] {
+        let mut cache = server::cache::Cache::new(Some(2), Some(0));
+        assert!(cache.add(&a, &response(&a, Reply::default()), Duration::ZERO));
+        assert!(cache.get(&b, Duration::ZERO).is_none());
+        assert!(cache.add(&b, &response(&b, Reply::default()), Duration::ZERO));
+        assert!(cache.get(&a, Duration::ZERO).is_some());
+        assert!(cache.get(&b, Duration::ZERO).is_some());
+    }
+    for name in [
+        &b"\0"[..],
+        &b"\x03\xc3\x89A\0"[..],
+        &b"\x03A\0B\0"[..],
+        &b"\x03A.B\0"[..],
+    ] {
+        let q = named_question(name, 1, 1);
+        let mut variant = q.clone();
+        variant[12..12 + name.len()].make_ascii_lowercase();
+        let mut cache = server::cache::Cache::new(Some(1), Some(0));
+        assert!(cache.add(&q, &response(&q, Reply::default()), Duration::ZERO));
+        assert_eq!(
+            &cache.get(&variant, Duration::ZERO).unwrap()[12..variant.len()],
+            &variant[12..]
+        );
+    }
+}
+
+#[test]
+fn answer_case_refresh_cooldown_completion_zero_ttl_and_expiry_share_key() {
+    let (mut cache, clock, q) = unit_cache(20, 10);
+    let variant = query(b'X', 1, 1, 99);
+    clock.at(10000);
+    let stale = cache.get(&variant, clock.now()).unwrap();
+    assert_eq!(&stale[12..variant.len()], &variant[12..]);
+    assert_eq!(ttls(&stale), &[0, 0, 0]);
+    assert!(cache.begin_refresh(&variant, clock.now()));
+    assert!(!cache.begin_refresh(&q, clock.now()));
+    cache.finish_refresh(&q, None, clock.now());
+    clock.at(14999);
+    assert!(!cache.begin_refresh(&variant, clock.now()));
+    clock.at(15000);
+    assert!(cache.begin_refresh(&q, clock.now()));
+    cache.finish_refresh(
+        &variant,
+        Some(&response(&variant, Reply::default())),
+        clock.now(),
+    );
+    assert_eq!(ttls(&cache.get(&q, clock.now()).unwrap()), INITIAL);
+    clock.at(25000);
+    assert!(cache.begin_refresh(&q, clock.now()));
+    let mut zero = response(&variant, Reply::default());
+    zero[variant.len() + 6..variant.len() + 10].fill(0);
+    cache.finish_refresh(&variant, Some(&zero), clock.now());
+    assert!(cache.get(&q, clock.now()).is_none());
+    assert!(!cache.begin_refresh(&variant, clock.now()));
+    assert!(cache.add(&q, &response(&q, Reply::default()), clock.now()));
+    assert!(!cache.add(&variant, &zero, clock.now()));
+    assert!(cache.get(&q, clock.now()).is_none());
+    assert!(cache.add(&q, &response(&q, Reply::default()), clock.now()));
+    clock.at(55000);
+    assert!(cache.get(&variant, clock.now()).is_none());
+    assert!(cache.get(&q, clock.now()).is_none());
+}
+
+#[test]
+fn answer_case_lru_replacement_does_not_consume_extra_capacity() {
+    let mut cache = server::cache::Cache::new(Some(2), Some(0));
+    let a = query(b'a', 1, 1, 42);
+    let upper = query(b'A', 1, 1, 99);
+    let b = query(b'b', 1, 1, 42);
+    let c = query(b'c', 1, 1, 42);
+    for q in [&a, &b, &upper] {
+        assert!(cache.add(q, &response(q, Reply::default()), Duration::ZERO));
+    }
+    assert!(cache.get(&b, Duration::ZERO).is_some());
+    assert!(cache.get(&a, Duration::ZERO).is_some());
+    assert!(cache.add(&c, &response(&c, Reply::default()), Duration::ZERO));
+    assert!(cache.get(&b, Duration::ZERO).is_none());
+    assert!(cache.get(&upper, Duration::ZERO).is_some());
+    assert!(cache.get(&c, Duration::ZERO).is_some());
+}
+
+#[test]
+fn answer_case_rejects_unsafe_question_layouts() {
+    let q = query(b'x', 1, 1, 42);
+    let mut cache = server::cache::Cache::new(Some(1), Some(0));
+    assert!(!cache.add(
+        &q,
+        &response(&query(b'y', 1, 1, 42), Reply::default()),
+        Duration::ZERO
+    ));
+    let root = named_question(b"\0", 1, 1);
+    let mut compressed = response(&root, Reply::default());
+    // A backward pointer to a zero header byte decodes as root, but changes layout.
+    compressed.splice(12..13, [0xc0, 4]);
+    assert!(dns::inspect(&compressed).is_ok());
+    assert!(!cache.add(&root, &compressed, Duration::ZERO));
+    assert!(!cache.add(&compressed, &compressed, Duration::ZERO));
+    for cut in 0..q.len() {
+        assert!(cache.get(&q[..cut], Duration::ZERO).is_none());
+        assert!(!cache.begin_refresh(&q[..cut], Duration::ZERO));
+        assert!(!cache.add(&q[..cut], &response(&q, Reply::default()), Duration::ZERO));
+    }
+    assert!(cache.get(&root, Duration::ZERO).is_none());
+}
+
 #[tokio::test]
 async fn ttl_decreases_from_insertion_not_last_hit() {
     let h = standard(5).await;

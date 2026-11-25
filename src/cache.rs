@@ -70,22 +70,25 @@ impl Cache {
     }
 
     pub fn get(&mut self, query: &[u8], now: Duration) -> Option<Vec<u8>> {
-        let key = question(query)?;
-        let entry = self.entries.get(key)?;
+        let key = question_key(query)?;
+        let entry = self.entries.get(&key)?;
         let fresh_elapsed = match self.lifetime(entry, now) {
             Lifetime::Fresh { elapsed, .. } => Some(elapsed),
             Lifetime::Stale => None,
             Lifetime::Expired => {
-                self.remove(key);
+                self.remove(&key);
                 return None;
             }
         };
-        let entry = self.entries.get_mut(key)?;
+        let entry = self.entries.get_mut(&key)?;
         self.lru.remove(&(entry.used, key.to_vec()));
         self.sequence += 1;
         entry.used = self.sequence;
         self.lru.insert((entry.used, key.to_vec()));
         let mut response = entry.response.clone();
+        // Admission guarantees an equal-length, uncompressed Question layout.
+        let question = question(query)?;
+        response[12..12 + question.len()].copy_from_slice(question);
         for &at in &entry.offsets {
             let original = u32::from_be_bytes(response[at..at + 4].try_into().ok()?);
             let ttl = match fresh_elapsed {
@@ -106,10 +109,10 @@ impl Cache {
 
     /// Reserve a refresh only on a live hit. Reservation and lookup share a lock.
     pub fn begin_refresh(&mut self, query: &[u8], now: Duration) -> bool {
-        let Some(key) = question(query) else {
+        let Some(key) = question_key(query) else {
             return false;
         };
-        let Some(entry) = self.entries.get(key) else {
+        let Some(entry) = self.entries.get(&key) else {
             return false;
         };
         let eligible = match self.lifetime(entry, now) {
@@ -124,7 +127,7 @@ impl Cache {
             || !eligible
             || cooling_down
             || self.refreshing.len() >= 4
-            || self.refreshing.contains(key)
+            || self.refreshing.contains(&key)
         {
             return false;
         }
@@ -133,12 +136,14 @@ impl Cache {
     }
 
     pub fn finish_refresh(&mut self, query: &[u8], response: Option<&[u8]>, now: Duration) {
-        let Some(key) = question(query) else { return };
-        if !self.refreshing.remove(key) {
+        let Some(key) = question_key(query) else {
+            return;
+        };
+        if !self.refreshing.remove(&key) {
             return;
         }
         let accepted = response.is_some_and(|response| self.add(query, response, now));
-        if !accepted && let Some(entry) = self.entries.get_mut(key) {
+        if !accepted && let Some(entry) = self.entries.get_mut(&key) {
             entry.last_failure = Some(now);
         }
     }
@@ -149,13 +154,15 @@ impl Cache {
         if self.capacity == 0 {
             return false;
         }
-        let Some(key) = question(query) else {
+        let Some(key) = question_key(query) else {
             return false;
         };
         let Ok(inspection) = dns::inspect(response) else {
             return false;
         };
-        if inspection.truncated
+        // Equal canonical Questions also guarantee matching label/field offsets.
+        if question_key(response).as_ref() != Some(&key)
+            || inspection.truncated
             || !matches!(response[3] & 15, 0 | 3)
             || inspection.answers.is_empty()
         {
@@ -165,14 +172,14 @@ impl Cache {
             return false;
         };
         if ttl == 0 {
-            self.remove(key);
+            self.remove(&key);
             return false;
         }
         let mut response = response.to_vec();
         if dns::set_id(&mut response, 0).is_err() {
             return false;
         }
-        self.remove(key);
+        self.remove(&key);
         if self.entries.len() as u64 >= self.capacity
             && let Some((_, oldest)) = self.lru.first().cloned()
         {
@@ -199,6 +206,31 @@ impl Cache {
             self.lru.remove(&(entry.used, key.to_vec()));
         }
     }
+}
+
+/// Keep label lengths and numeric fields exact; reject layouts unsafe to echo.
+fn question_key(wire: &[u8]) -> Option<Vec<u8>> {
+    if wire.get(4..6)? != [0, 1] {
+        return None;
+    }
+    let mut key = question(wire)?.to_vec();
+    let mut at = 0;
+    loop {
+        let len = usize::from(*key.get(at)?);
+        at += 1;
+        match len {
+            0 => break,
+            1..=63 => {
+                key.get_mut(at..at + len)?.make_ascii_lowercase();
+                at += len;
+            }
+            _ => return None,
+        }
+    }
+    if at > 255 {
+        return None;
+    }
+    Some(key)
 }
 
 fn question(wire: &[u8]) -> Option<&[u8]> {
