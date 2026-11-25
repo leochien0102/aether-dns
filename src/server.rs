@@ -716,8 +716,13 @@ async fn exchange_response(
     Ok(response)
 }
 
+// The backend serializes Netlink reads. Bound running + queued reads across
+// all listeners/server instances, rather than filling Tokio's blocking queue.
+const MAX_IP_TESTS: usize = 8;
+static IP_TEST_PERMITS: Semaphore = Semaphore::const_new(MAX_IP_TESTS);
+
 // Only a concrete IP decision is reusable; TC/no-IP/other_case are not.
-fn use_china_reply(response: &[u8], routing: &Routing, qname: &[u8]) -> bool {
+async fn use_china_reply(response: &[u8], routing: &Routing, qname: &[u8]) -> bool {
     // Like dns_test_ip / use_china_reply: non-good replies are other_case.
     if response[2] & 2 != 0 {
         return true;
@@ -731,7 +736,25 @@ fn use_china_reply(response: &[u8], routing: &Routing, qname: &[u8]) -> bool {
     let Some((ip, _)) = ip else {
         return false;
     };
-    let accepted = ip.is_ipv4() && routing.ip_test.is_china(ip);
+    let accepted = if ip.is_ipv4() {
+        let Ok(permit) = IP_TEST_PERMITS.try_acquire() else {
+            // Local overload is not a non-member verdict. Fall back silently.
+            return false;
+        };
+        let ip_test = routing.ip_test.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            // Cancellation of the async waiter must not release this quota.
+            let _permit = permit;
+            ip_test.is_china(ip)
+        })
+        .await;
+        let Ok(accepted) = result else {
+            return false;
+        };
+        accepted
+    } else {
+        false
+    };
     routing.verdict.lock().unwrap().add(qname, accepted);
     accepted
 }
@@ -810,7 +833,9 @@ async fn none_exchange(
     tokio::pin!(china, trust);
     tokio::select! {
         china_result = &mut china => {
-            if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, routing, qname)) {
+            if let Ok(reply) = &china_result
+                && use_china_reply(reply, routing, qname).await
+            {
                 return china_result;
             }
             // A failed side cannot hide the other side's legal response, and
@@ -820,7 +845,9 @@ async fn none_exchange(
         trust_result = &mut trust => {
             // Trust arriving first is held until china decides (or fails).
             let china_result = china.await;
-            if china_result.as_ref().is_ok_and(|reply| use_china_reply(reply, routing, qname)) {
+            if let Ok(reply) = &china_result
+                && use_china_reply(reply, routing, qname).await
+            {
                 china_result
             } else {
                 merge_dual_results(trust_result, china_result)
