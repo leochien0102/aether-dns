@@ -174,9 +174,11 @@ pub async fn run_with_cache_clock(
                 let socket = socket.clone();
                 let upstream = upstream.clone();
                 queries.spawn(async move {
-                    if let Some(response) =
+                    let udp_limit = dns::udp_payload_limit(&query);
+                    if let Some(mut response) =
                         handle_query(&upstream, query, client_id, id, Protocol::Udp, peer).await
                     {
+                        dns::enforce_udp_limit(&mut response, udp_limit);
                         send(&socket, peer, &response).await;
                     }
                 });

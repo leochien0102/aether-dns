@@ -2,8 +2,10 @@
 #![allow(dead_code)] // Used by the forwarding card.
 
 use hickory_proto::op::{Edns, Message, ResponseCode};
-use hickory_proto::rr::{DNSClass, Name, RData, RecordType};
+use hickory_proto::rr::{DNSClass, Name, RData, RecordType, rdata::OPT};
 use std::net::IpAddr;
+
+pub const MIN_UDP_PAYLOAD_SIZE: usize = 512;
 
 #[derive(Debug)]
 pub struct Inspection {
@@ -199,4 +201,119 @@ pub fn synthetic_nodata(wire: &mut Vec<u8>) -> Result<(), WireError> {
     wire[6..12].fill(0);
     wire.truncate(end);
     Ok(())
+}
+
+/// Effective UDP DNS payload limit advertised by this client query.
+/// Without a valid EDNS OPT record the limit is 512 bytes; with a valid OPT
+/// record it is the advertised UDP payload size clamped to at least 512 bytes
+/// (RFC 6891 section 6.2.3).
+pub fn udp_payload_limit(query: &[u8]) -> usize {
+    Message::from_vec(query)
+        .ok()
+        .map_or(MIN_UDP_PAYLOAD_SIZE, |message| {
+            usize::from(message.max_payload())
+        })
+}
+
+/// Ensure a DNS wire response fits within the client's UDP payload limit
+/// without slicing raw bytes or corrupting records.
+///
+/// - Responses already within `max_size` are left untouched (preserving wire
+///   layout and any existing `TC` flag).
+/// - If omitting optional additional records or optional EDNS OPT content is
+///   sufficient to fit, `TC` is not forced to 1.
+/// - Extended RCODEs carried in OPT are never dropped so an error response is
+///   never misreported as success.
+/// - When required sections still exceed `max_size`, returns a valid,
+///   parseable `TC=1` response preserving client ID, Question, flags, and full
+///   RCODE.
+pub fn enforce_udp_limit(response: &mut Vec<u8>, max_size: usize) {
+    let limit = max_size.max(MIN_UDP_PAYLOAD_SIZE);
+    if response.len() <= limit {
+        return;
+    }
+    if let Ok(mut message) = Message::from_vec(response) {
+        let has_extended_rcode = message
+            .extensions()
+            .as_ref()
+            .is_some_and(|edns| edns.rcode_high() != 0);
+
+        if !message.additionals().is_empty() {
+            message.take_additionals();
+            if try_replace_if_fits(response, &message, limit) {
+                return;
+            }
+        }
+
+        if let Some(edns) = message.extensions_mut()
+            && !edns.options().as_ref().is_empty()
+        {
+            *edns.options_mut() = OPT::default();
+            if try_replace_if_fits(response, &message, limit) {
+                return;
+            }
+        }
+
+        if !has_extended_rcode && message.extensions().is_some() {
+            *message.extensions_mut() = None;
+            if try_replace_if_fits(response, &message, limit) {
+                return;
+            }
+        }
+
+        message.set_truncated(true);
+        message.take_answers();
+        message.take_name_servers();
+        message.take_additionals();
+        if let Some(edns) = message.extensions_mut() {
+            if has_extended_rcode {
+                *edns.options_mut() = OPT::default();
+            } else {
+                *message.extensions_mut() = None;
+            }
+        }
+        if try_replace_if_fits(response, &message, limit) {
+            return;
+        }
+    }
+
+    fallback_truncate_wire(response, limit);
+}
+
+fn try_replace_if_fits(response: &mut Vec<u8>, message: &Message, limit: usize) -> bool {
+    if let Ok(encoded) = message.to_vec()
+        && encoded.len() <= limit
+    {
+        *response = encoded;
+        return true;
+    }
+    false
+}
+
+fn fallback_truncate_wire(response: &mut Vec<u8>, limit: usize) {
+    if response.len() < 12 {
+        return;
+    }
+    let full_rcode = rcode(response).unwrap_or(u16::from(response[3] & 0x0f));
+    let ext_rcode = (full_rcode >> 4) as u8;
+    let qdcount = word(response, 4).unwrap_or(0);
+    let mut end = 12;
+    let mut kept_questions = 0u16;
+    for _ in 0..qdcount {
+        match question_end(response, end) {
+            Ok(next) if next <= limit => {
+                end = next;
+                kept_questions += 1;
+            }
+            _ => break,
+        }
+    }
+    response[2] |= 0x02;
+    response[4..6].copy_from_slice(&kept_questions.to_be_bytes());
+    response[6..12].fill(0);
+    response.truncate(end);
+    if ext_rcode != 0 && response.len() + 11 <= limit {
+        response[10..12].copy_from_slice(&1u16.to_be_bytes());
+        response.extend_from_slice(&[0, 0, 41, 2, 0, ext_rcode, 0, 0, 0, 0, 0]);
+    }
 }
