@@ -18,7 +18,11 @@ fn invalid(input: &[u8], line: usize) {
 
 #[test]
 fn config_fixtures() {
-    let root = Path::new("/workspace/openwrt/aether-proxy/tests/fixtures");
+    let root = std::env::var_os("AETHER_PROXY_FIXTURES")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../aether-proxy/tests/fixtures")
+        });
     let mut files: Vec<_> = std::fs::read_dir(root)
         .unwrap()
         .map(|e| e.unwrap().path().join("expected/chinadns.conf"))
