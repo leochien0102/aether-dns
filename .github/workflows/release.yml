@@ -61,6 +61,7 @@ jobs:
           grep -F 'statically linked' binary-file.txt
           readelf -d binary/aether-dns | tee binary-dynamic.txt
           ! grep -q NEEDED binary-dynamic.txt
+          sh tests/ci/check-stripped.sh binary/aether-dns
           if [[ "$TARGET" == aarch64-* ]]; then
             version=$(qemu-aarch64 binary/aether-dns -V)
           else
@@ -185,6 +186,7 @@ jobs:
             grep -F 'statically linked' raw-file.txt
             readelf -d "$binary" | tee raw-dynamic.txt
             ! grep -q NEEDED raw-dynamic.txt
+            sh tests/ci/check-stripped.sh "$binary"
             if [[ "$arch" == aarch64_generic ]]; then
               version=$(qemu-aarch64-static "$binary" -V)
             else
@@ -234,6 +236,7 @@ jobs:
             grep -F 'statically linked' apk-file.txt
             readelf -d "$binary" | tee apk-dynamic.txt
             ! grep -q NEEDED apk-dynamic.txt
+            sh tests/ci/check-stripped.sh "$binary"
             if [[ "$arch" == aarch64_generic ]]; then
               version=$(qemu-aarch64-static "$binary" -V)
             else
@@ -262,6 +265,7 @@ jobs:
             grep -F 'statically linked' file.txt
             readelf -d "$binary" | tee dynamic.txt
             ! grep -q NEEDED dynamic.txt
+            sh tests/ci/check-stripped.sh "$binary"
             if [[ "$asset" == *aarch64_generic* ]]; then
               version=$(qemu-aarch64-static "$binary" -V)
             else

@@ -12,3 +12,6 @@ path = "src/main.rs"
 libc = "0.2"
 hickory-proto = "=0.25.2"
 tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time", "signal", "sync"] }
+
+[profile.release]
+strip = "symbols"
