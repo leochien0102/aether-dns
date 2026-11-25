@@ -25,7 +25,7 @@ jobs:
           - arch: aarch64_generic
             target: aarch64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Validate invocation
         env:
           EVENT: ${{ github.event_name }}
@@ -71,7 +71,7 @@ jobs:
           sh tests/ci/check-version.sh "$version"
           expected="aether-dns $(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n1)"
           [[ "$version" == "$expected" ]]
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: binary-${{ matrix.arch }}
           path: binary/aether-dns
@@ -102,8 +102,8 @@ jobs:
             package_arch: aarch64_generic
             ext: apk
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: binary-${{ matrix.package_arch }}
           path: openwrt/files
@@ -149,7 +149,7 @@ jobs:
           [[ ${#files[@]} == 1 ]] || exit 1
           mkdir -p assets
           cp "${files[0]}" "assets/$name"
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package-${{ matrix.sdk }}-${{ matrix.package_arch }}
           path: assets/*
@@ -160,13 +160,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: package-*
           merge-multiple: true
           path: assets
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: binary-*
           path: binaries
@@ -279,7 +279,7 @@ jobs:
       # raw binaries between jobs. This archive is not a Release asset.
       - name: Preserve release asset permissions for transport
         run: tar -cf release-assets.tar -C assets .
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-assets
           path: release-assets.tar
@@ -298,10 +298,10 @@ jobs:
       TAG: ${{ github.ref_name }}
     steps:
       # `gh release create --verify-tag` needs the tag ref present locally.
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-assets
           path: transport
