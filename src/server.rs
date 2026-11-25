@@ -672,7 +672,13 @@ async fn forward(
             }
         }
         dns::set_id(&mut response, client_id).map_err(wire_error)?;
-        ip_writer::write_reply(&upstream.config, tag, &response, &*upstream.ip_writer);
+        ip_writer::write_reply_offloaded(
+            &upstream.config,
+            tag,
+            &response,
+            upstream.ip_writer.clone(),
+        )
+        .await;
         return Ok(response);
     }
     let mut response = exchange_response(upstream, query, Some(client_id), client_protocol).await?;
@@ -682,7 +688,8 @@ async fn forward(
         .lock()
         .unwrap()
         .add(query, &response, upstream.clock.now());
-    ip_writer::write_reply(&upstream.config, tag, &response, &*upstream.ip_writer);
+    ip_writer::write_reply_offloaded(&upstream.config, tag, &response, upstream.ip_writer.clone())
+        .await;
     Ok(response)
 }
 
