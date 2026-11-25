@@ -298,9 +298,20 @@ pub fn enforce_udp_limit(response: &mut Vec<u8>, budget: UdpBudget) {
             .extensions()
             .as_ref()
             .is_some_and(|edns| edns.rcode_high() != 0);
-        let must_keep_opt = budget.client_edns || has_extended_rcode;
 
-        if !must_keep_opt && message.extensions().is_some() {
+        if !budget.client_edns && has_extended_rcode {
+            message.set_response_code(ResponseCode::ServFail);
+            message.set_truncated(false);
+            message.take_answers();
+            message.take_name_servers();
+            message.take_additionals();
+            *message.extensions_mut() = None;
+            if try_replace_if_fits(response, &message, limit) {
+                return;
+            }
+        }
+
+        if !budget.client_edns && message.extensions().is_some() {
             *message.extensions_mut() = None;
             if try_replace_if_fits(response, &message, limit) {
                 return;
@@ -349,13 +360,11 @@ pub fn enforce_udp_limit(response: &mut Vec<u8>, budget: UdpBudget) {
         message.take_answers();
         message.take_name_servers();
         message.take_additionals();
-        if must_keep_opt {
+        if budget.client_edns {
             let edns = message
                 .extensions_mut()
                 .get_or_insert_with(|| minimal_edns(budget.client_do));
-            if budget.client_edns {
-                edns.set_dnssec_ok(budget.client_do);
-            }
+            edns.set_dnssec_ok(budget.client_do);
             *edns.options_mut() = OPT::default();
         } else {
             *message.extensions_mut() = None;
@@ -396,12 +405,20 @@ fn fallback_truncate_wire(response: &mut Vec<u8>, limit: usize, keep_opt: bool, 
             _ => break,
         }
     }
+    if !keep_opt && ext_rcode != 0 {
+        response[2] &= !0x02;
+        response[3] = (response[3] & 0xf0) | 2;
+        response[4..6].copy_from_slice(&kept_questions.to_be_bytes());
+        response[6..12].fill(0);
+        response.truncate(end);
+        return;
+    }
     response[2] |= 0x02;
     response[4..6].copy_from_slice(&kept_questions.to_be_bytes());
     response[6..12].fill(0);
     response.truncate(end);
-    if (keep_opt || ext_rcode != 0) && response.len() + MINIMAL_OPT_LEN <= limit {
+    if keep_opt && response.len() + MINIMAL_OPT_LEN <= limit {
         response[10..12].copy_from_slice(&1u16.to_be_bytes());
-        response.extend_from_slice(&minimal_opt_bytes(ext_rcode, keep_opt && do_bit));
+        response.extend_from_slice(&minimal_opt_bytes(ext_rcode, do_bit));
     }
 }

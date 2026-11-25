@@ -701,13 +701,18 @@ fn extended_rcode_is_never_downgraded_to_noerror() {
     assert_eq!(u16::from(m1.response_code()), 16);
     assert_eq!(dns::rcode(&badvers_pad), Ok(16));
 
-    // Non-EDNS client receiving upstream BADVERS must also never downgrade to NOERROR.
+    // Non-EDNS client receiving upstream RCODE > 15 (BADVERS) maps to SERVFAIL without OPT or answers.
     dns::enforce_udp_limit(&mut badvers_no_edns, no_edns);
     let m1_no_edns = summarize("pure-badvers-no-edns", &badvers_no_edns);
     assert!(badvers_no_edns.len() <= 512);
+    assert_eq!(m1_no_edns.id(), 0x5301);
+    assert_eq!(m1_no_edns.queries()[0].name().to_ascii(), "badvers.gfw.example.");
+    assert_eq!(m1_no_edns.queries()[0].query_type(), RecordType::A);
     assert!(!m1_no_edns.truncated());
-    assert_eq!(u16::from(m1_no_edns.response_code()), 16);
-    assert_eq!(dns::rcode(&badvers_no_edns), Ok(16));
+    assert_eq!(m1_no_edns.response_code(), ResponseCode::ServFail);
+    assert_eq!(dns::rcode(&badvers_no_edns), Ok(2));
+    assert!(m1_no_edns.extensions().is_none());
+    assert_eq!(m1_no_edns.answers().len(), 0);
 
     // Case 2: BADVERS (16) over 512 due to required answer section -> TC=1 AND still BADVERS!
     let mut badvers_big = build_oversized_a_response(&q, 40);
@@ -733,6 +738,7 @@ fn extended_rcode_is_never_downgraded_to_noerror() {
     malformed.extend(std::iter::repeat_n(b'z', 100));
     assert!(malformed.len() > 512);
     assert!(Message::from_vec(&malformed).is_err());
+    let mut malformed_no_edns = malformed.clone();
     dns::enforce_udp_limit(&mut malformed, edns_512);
     let m3 = summarize("pure-badvers-fallback", &malformed);
     assert!(malformed.len() <= 512);
@@ -740,6 +746,18 @@ fn extended_rcode_is_never_downgraded_to_noerror() {
     assert_eq!(m3.id(), 0x5301);
     assert_eq!(u16::from(m3.response_code()), 16);
     assert_eq!(dns::rcode(&malformed), Ok(16));
+
+    // Malformed fallback for non-EDNS client with RCODE > 15 follows the same SERVFAIL/no-OPT rule.
+    dns::enforce_udp_limit(&mut malformed_no_edns, no_edns);
+    let m3_no_edns = summarize("pure-badvers-fallback-no-edns", &malformed_no_edns);
+    assert!(malformed_no_edns.len() <= 512);
+    assert!(!m3_no_edns.truncated());
+    assert_eq!(m3_no_edns.id(), 0x5301);
+    assert_eq!(m3_no_edns.queries()[0].name().to_ascii(), "badvers.gfw.example.");
+    assert_eq!(m3_no_edns.response_code(), ResponseCode::ServFail);
+    assert_eq!(dns::rcode(&malformed_no_edns), Ok(2));
+    assert!(m3_no_edns.extensions().is_none());
+    assert_eq!(m3_no_edns.answers().len(), 0);
 }
 
 #[tokio::test]
@@ -839,11 +857,20 @@ async fn udp_edns_512_noerror_preserves_minimal_opt_and_badvers_keeps_rcode_16()
         assert!(edns.options().as_ref().is_empty(), "must not copy client options");
     }
 
-    for (raw, msg, expected_id) in [(&r_bv, &m_bv, 0x6103u16), (&r_bv_no_edns, &m_bv_no_edns, 0x6113u16)] {
-        assert!(raw.len() <= 512, "got {}", raw.len());
-        assert_eq!(msg.id(), expected_id);
-        assert_eq!(u16::from(msg.response_code()), 16, "BADVERS must remain RCODE 16");
-        assert_eq!(dns::rcode(raw), Ok(16));
-        assert!(msg.extensions().is_some());
-    }
+    assert!(r_bv.len() <= 512, "got {}", r_bv.len());
+    assert_eq!(m_bv.id(), 0x6103);
+    assert_eq!(m_bv.queries()[0].name().to_ascii(), "badvers.gfw.example.");
+    assert_eq!(u16::from(m_bv.response_code()), 16, "EDNS BADVERS must remain RCODE 16");
+    assert_eq!(dns::rcode(&r_bv), Ok(16));
+    assert!(m_bv.extensions().is_some());
+    assert!(!m_bv.extensions().as_ref().unwrap().flags().dnssec_ok);
+
+    assert!(r_bv_no_edns.len() <= 512, "got {}", r_bv_no_edns.len());
+    assert_eq!(m_bv_no_edns.id(), 0x6113);
+    assert_eq!(m_bv_no_edns.queries()[0].name().to_ascii(), "badvers.gfw.example.");
+    assert_eq!(m_bv_no_edns.queries()[0].query_type(), RecordType::A);
+    assert_eq!(m_bv_no_edns.response_code(), ResponseCode::ServFail);
+    assert_eq!(dns::rcode(&r_bv_no_edns), Ok(2));
+    assert!(m_bv_no_edns.extensions().is_none(), "non-EDNS SERVFAIL must omit OPT");
+    assert_eq!(m_bv_no_edns.answers().len(), 0);
 }
