@@ -69,6 +69,17 @@ fn encode_name(labels: &[&str]) -> Vec<u8> {
 }
 
 fn build_query(id: u16, labels: &[&str], qtype: u16, edns_payload: Option<u16>) -> Vec<u8> {
+    build_query_edns(id, labels, qtype, edns_payload, false, &[])
+}
+
+fn build_query_edns(
+    id: u16,
+    labels: &[&str],
+    qtype: u16,
+    edns_payload: Option<u16>,
+    do_bit: bool,
+    client_options: &[u8],
+) -> Vec<u8> {
     let mut wire = Vec::new();
     wire.extend_from_slice(&id.to_be_bytes());
     wire.extend_from_slice(&[0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
@@ -80,7 +91,9 @@ fn build_query(id: u16, labels: &[&str], qtype: u16, edns_payload: Option<u16>) 
         wire.push(0);
         wire.extend_from_slice(&41u16.to_be_bytes());
         wire.extend_from_slice(&payload.to_be_bytes());
-        wire.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        wire.extend_from_slice(&[0, 0, if do_bit { 0x80 } else { 0 }, 0]);
+        wire.extend_from_slice(&(client_options.len() as u16).to_be_bytes());
+        wire.extend_from_slice(client_options);
     }
     wire
 }
@@ -279,15 +292,23 @@ fn summarize(label: &str, wire: &[u8]) -> Message {
         .first()
         .map(|q| format!("{} {}", q.name(), q.query_type()))
         .unwrap_or_else(|| "<none>".into());
+    let opt = msg.extensions().is_some();
+    let do_bit = msg
+        .extensions()
+        .as_ref()
+        .is_some_and(|edns| edns.flags().dnssec_ok);
     eprintln!(
-        "[{label}] len={} id={:#06x} q=({q}) rcode={:?} tc={} an={} ns={} ar={}",
+        "[{label}] len={} id={:#06x} q=({q}) rcode={:?}({}) tc={} opt={} do={} an={} ns={} ar={}",
         wire.len(),
         msg.id(),
         msg.response_code(),
+        u16::from(msg.response_code()),
         msg.truncated(),
+        opt,
+        do_bit,
         msg.answers().len(),
         msg.name_servers().len(),
-        msg.additionals().len() + usize::from(msg.extensions().is_some()),
+        msg.additionals().len() + usize::from(opt),
     );
     msg
 }
@@ -473,6 +494,7 @@ fn udp_budget_rules() {
         dns::UdpBudget {
             max_size: 512,
             client_edns: false,
+            client_do: false,
         }
     );
     assert_eq!(
@@ -480,6 +502,7 @@ fn udp_budget_rules() {
         dns::UdpBudget {
             max_size: 512,
             client_edns: true,
+            client_do: false,
         }
     );
     assert_eq!(
@@ -487,6 +510,7 @@ fn udp_budget_rules() {
         dns::UdpBudget {
             max_size: 512,
             client_edns: true,
+            client_do: false,
         }
     );
     assert_eq!(
@@ -494,6 +518,15 @@ fn udp_budget_rules() {
         dns::UdpBudget {
             max_size: 512,
             client_edns: true,
+            client_do: false,
+        }
+    );
+    assert_eq!(
+        dns::udp_budget(&build_query_edns(7, &["a", "example"], 1, Some(512), true, &[])),
+        dns::UdpBudget {
+            max_size: 512,
+            client_edns: true,
+            client_do: true,
         }
     );
     assert_eq!(
@@ -501,6 +534,7 @@ fn udp_budget_rules() {
         dns::UdpBudget {
             max_size: 1232,
             client_edns: true,
+            client_do: false,
         }
     );
     assert_eq!(
@@ -508,6 +542,7 @@ fn udp_budget_rules() {
         dns::UdpBudget {
             max_size: 4096,
             client_edns: true,
+            client_do: false,
         }
     );
     // Malformed / truncated query falls back to non-EDNS 512.
@@ -516,6 +551,7 @@ fn udp_budget_rules() {
         dns::UdpBudget {
             max_size: 512,
             client_edns: false,
+            client_do: false,
         }
     );
 }
@@ -525,10 +561,12 @@ fn optional_additional_omission_does_not_set_tc() {
     let no_edns = dns::UdpBudget {
         max_size: 512,
         client_edns: false,
+        client_do: false,
     };
     let edns_512 = dns::UdpBudget {
         max_size: 512,
         client_edns: true,
+        client_do: false,
     };
     let q = build_query(0x5101, &["opt", "gfw", "example"], 1, None);
     // 1) Non-OPT additional glue records push size > 512 while answers fit.
@@ -546,6 +584,7 @@ fn optional_additional_omission_does_not_set_tc() {
     assert_eq!(m_glue.id(), 0x5101);
     assert_eq!(m_glue.answers().len(), 2);
     assert_eq!(m_glue.additionals().len(), 0);
+    assert!(m_glue.extensions().is_none());
 
     // 2) Large optional EDNS OPT padding pushes size > 512 while answers + minimal OPT fit.
     let mut with_opt_pad = build_exact_len_response(&q, 420);
@@ -563,6 +602,10 @@ fn optional_additional_omission_does_not_set_tc() {
     assert!(with_opt_pad.len() <= 512);
     assert!(!m_pad.truncated(), "stripping optional OPT content must not set TC");
     assert_eq!(m_pad.answers().len(), 2);
+    assert!(
+        m_pad.extensions().is_none(),
+        "non-EDNS query normal response must omit OPT"
+    );
 
     dns::enforce_udp_limit(&mut with_opt_pad_edns, edns_512);
     let m_pad_edns = summarize("pure-optional-opt-padding-edns512", &with_opt_pad_edns);
@@ -570,6 +613,7 @@ fn optional_additional_omission_does_not_set_tc() {
     assert!(!m_pad_edns.truncated(), "stripping OPT padding for EDNS client must not set TC");
     assert_eq!(m_pad_edns.answers().len(), 2);
     assert!(m_pad_edns.extensions().is_some(), "minimal OPT must remain for EDNS client");
+    assert!(!m_pad_edns.extensions().as_ref().unwrap().flags().dnssec_ok);
 
     // 3) Minimal OPT (ext_rcode=0) pushes 509-byte answers to 520 bytes:
     //    - No-EDNS client: omitting OPT fits with TC=0.
@@ -601,6 +645,7 @@ fn existing_tc_is_preserved_in_all_cases() {
     let no_edns = dns::UdpBudget {
         max_size: 512,
         client_edns: false,
+        client_do: false,
     };
     let q = build_query(0x5201, &["tc", "gfw", "example"], 1, None);
 
@@ -627,9 +672,15 @@ fn existing_tc_is_preserved_in_all_cases() {
 
 #[test]
 fn extended_rcode_is_never_downgraded_to_noerror() {
+    let no_edns = dns::UdpBudget {
+        max_size: 512,
+        client_edns: false,
+        client_do: false,
+    };
     let edns_512 = dns::UdpBudget {
         max_size: 512,
         client_edns: true,
+        client_do: false,
     };
     let q = build_query(0x5301, &["badvers", "gfw", "example"], 1, Some(1232));
 
@@ -642,12 +693,21 @@ fn extended_rcode_is_never_downgraded_to_noerror() {
     badvers_pad.extend_from_slice(&12u16.to_be_bytes());
     badvers_pad.extend_from_slice(&120u16.to_be_bytes());
     badvers_pad.extend(std::iter::repeat_n(0u8, 120));
+    let mut badvers_no_edns = badvers_pad.clone();
     dns::enforce_udp_limit(&mut badvers_pad, edns_512);
     let m1 = summarize("pure-badvers-strip-pad", &badvers_pad);
     assert!(badvers_pad.len() <= 512);
     assert!(!m1.truncated());
     assert_eq!(u16::from(m1.response_code()), 16);
     assert_eq!(dns::rcode(&badvers_pad), Ok(16));
+
+    // Non-EDNS client receiving upstream BADVERS must also never downgrade to NOERROR.
+    dns::enforce_udp_limit(&mut badvers_no_edns, no_edns);
+    let m1_no_edns = summarize("pure-badvers-no-edns", &badvers_no_edns);
+    assert!(badvers_no_edns.len() <= 512);
+    assert!(!m1_no_edns.truncated());
+    assert_eq!(u16::from(m1_no_edns.response_code()), 16);
+    assert_eq!(dns::rcode(&badvers_no_edns), Ok(16));
 
     // Case 2: BADVERS (16) over 512 due to required answer section -> TC=1 AND still BADVERS!
     let mut badvers_big = build_oversized_a_response(&q, 40);
@@ -715,43 +775,75 @@ async fn udp_edns_512_noerror_preserves_minimal_opt_and_badvers_keeps_rcode_16()
     })
     .await;
     let server = TestServer::start(upstream.port, None).await;
+    // Client EDNS option (padding code 12, 4 zero bytes) to verify client options are never echoed.
+    let client_opt = [0, 12, 0, 4, 0, 0, 0, 0];
 
-    // 1) EDNS 512 client: 509 B answers + 11 B minimal OPT = 520 B > 512 -> TC=1, OPT preserved.
-    let q_509 = build_query(0x6101, &["edns509", "gfw", "example"], 1, Some(512));
-    let r_509 = server.udp_query(&q_509).await;
-    let m_509 = summarize("real-udp-edns512-509-plus-opt", &r_509);
+    // 1) EDNS 512 (DO=0): 509 B answers + 11 B minimal OPT = 520 B > 512 -> TC=1, OPT preserved, DO=0.
+    let q_509_do0 = build_query(0x6101, &["edns509", "gfw", "example"], 1, Some(512));
+    let r_509_do0 = server.udp_query(&q_509_do0).await;
+    let m_509_do0 = summarize("real-udp-edns512-do0-509-plus-opt", &r_509_do0);
 
-    // 2) EDNS 512 client: 420 B answers + padded OPT (555 B) -> padding dropped, TC=0, answers & OPT preserved.
-    let q_pad = build_query(0x6102, &["ednspad", "gfw", "example"], 1, Some(512));
-    let r_pad = server.udp_query(&q_pad).await;
-    let m_pad = summarize("real-udp-edns512-strip-padding", &r_pad);
+    // 2) EDNS 512 (DO=1 + client options): 509 B answers + minimal OPT -> TC=1, OPT preserved, DO=1, options empty.
+    let q_509_do1 = build_query_edns(0x6111, &["edns509", "gfw", "example"], 1, Some(512), true, &client_opt);
+    let r_509_do1 = server.udp_query(&q_509_do1).await;
+    let m_509_do1 = summarize("real-udp-edns512-do1-509-plus-opt", &r_509_do1);
 
-    // 3) Real shared forwarding path BADVERS (RCODE 16): must not be stripped as NOERROR.
+    // 3) EDNS 512 (DO=0): 420 B answers + padded OPT (555 B) -> padding dropped, TC=0, OPT preserved, DO=0.
+    let q_pad_do0 = build_query(0x6102, &["ednspad", "gfw", "example"], 1, Some(512));
+    let r_pad_do0 = server.udp_query(&q_pad_do0).await;
+    let m_pad_do0 = summarize("real-udp-edns512-do0-strip-padding", &r_pad_do0);
+
+    // 4) EDNS 512 (DO=1 + client options): 420 B answers + padded OPT (555 B) -> TC=0, OPT preserved, DO=1, options empty.
+    let q_pad_do1 = build_query_edns(0x6112, &["ednspad", "gfw", "example"], 1, Some(512), true, &client_opt);
+    let r_pad_do1 = server.udp_query(&q_pad_do1).await;
+    let m_pad_do1 = summarize("real-udp-edns512-do1-strip-padding", &r_pad_do1);
+
+    // 5) Real shared forwarding path BADVERS (RCODE 16): EDNS client and non-EDNS client both keep RCODE 16.
     let q_bv = build_query(0x6103, &["badvers", "gfw", "example"], 1, Some(512));
     let r_bv = server.udp_query(&q_bv).await;
-    let m_bv = summarize("real-udp-shared-badvers", &r_bv);
+    let m_bv = summarize("real-udp-shared-badvers-edns", &r_bv);
+
+    let q_bv_no_edns = build_query(0x6113, &["badvers", "gfw", "example"], 1, None);
+    let r_bv_no_edns = server.udp_query(&q_bv_no_edns).await;
+    let m_bv_no_edns = summarize("real-udp-shared-badvers-no-edns", &r_bv_no_edns);
 
     server.stop().await;
 
-    assert!(r_509.len() <= 512, "got {}", r_509.len());
-    assert_eq!(m_509.id(), 0x6101);
-    assert_eq!(m_509.queries()[0].name().to_ascii(), "edns509.gfw.example.");
-    assert_eq!(m_509.queries()[0].query_type(), RecordType::A);
-    assert_eq!(m_509.response_code(), ResponseCode::NoError);
-    assert!(m_509.truncated(), "expected TC=1 when answers + minimal OPT exceed 512");
-    assert!(m_509.extensions().is_some(), "minimal OPT must be preserved for EDNS client");
+    for (raw, msg, expected_id, expected_do) in [
+        (&r_509_do0, &m_509_do0, 0x6101u16, false),
+        (&r_509_do1, &m_509_do1, 0x6111u16, true),
+    ] {
+        assert!(raw.len() <= 512, "got {}", raw.len());
+        assert_eq!(msg.id(), expected_id);
+        assert_eq!(msg.queries()[0].name().to_ascii(), "edns509.gfw.example.");
+        assert_eq!(msg.queries()[0].query_type(), RecordType::A);
+        assert_eq!(msg.response_code(), ResponseCode::NoError);
+        assert!(msg.truncated(), "expected TC=1 when answers + minimal OPT exceed 512");
+        let edns = msg.extensions().as_ref().expect("minimal OPT must be preserved");
+        assert_eq!(edns.flags().dnssec_ok, expected_do);
+        assert!(edns.options().as_ref().is_empty(), "must not copy client options");
+    }
 
-    assert!(r_pad.len() <= 512, "got {}", r_pad.len());
-    assert_eq!(m_pad.id(), 0x6102);
-    assert_eq!(m_pad.queries()[0].name().to_ascii(), "ednspad.gfw.example.");
-    assert_eq!(m_pad.response_code(), ResponseCode::NoError);
-    assert!(!m_pad.truncated(), "dropping padding alone must not set TC");
-    assert_eq!(m_pad.answers().len(), 2);
-    assert!(m_pad.extensions().is_some(), "minimal OPT must remain present");
+    for (raw, msg, expected_id, expected_do) in [
+        (&r_pad_do0, &m_pad_do0, 0x6102u16, false),
+        (&r_pad_do1, &m_pad_do1, 0x6112u16, true),
+    ] {
+        assert!(raw.len() <= 512, "got {}", raw.len());
+        assert_eq!(msg.id(), expected_id);
+        assert_eq!(msg.queries()[0].name().to_ascii(), "ednspad.gfw.example.");
+        assert_eq!(msg.response_code(), ResponseCode::NoError);
+        assert!(!msg.truncated(), "dropping padding alone must not set TC");
+        assert_eq!(msg.answers().len(), 2);
+        let edns = msg.extensions().as_ref().expect("minimal OPT must remain present");
+        assert_eq!(edns.flags().dnssec_ok, expected_do);
+        assert!(edns.options().as_ref().is_empty(), "must not copy client options");
+    }
 
-    assert!(r_bv.len() <= 512, "got {}", r_bv.len());
-    assert_eq!(m_bv.id(), 0x6103);
-    assert_eq!(u16::from(m_bv.response_code()), 16, "BADVERS must remain RCODE 16");
-    assert_eq!(dns::rcode(&r_bv), Ok(16));
-    assert!(m_bv.extensions().is_some());
+    for (raw, msg, expected_id) in [(&r_bv, &m_bv, 0x6103u16), (&r_bv_no_edns, &m_bv_no_edns, 0x6113u16)] {
+        assert!(raw.len() <= 512, "got {}", raw.len());
+        assert_eq!(msg.id(), expected_id);
+        assert_eq!(u16::from(msg.response_code()), 16, "BADVERS must remain RCODE 16");
+        assert_eq!(dns::rcode(raw), Ok(16));
+        assert!(msg.extensions().is_some());
+    }
 }

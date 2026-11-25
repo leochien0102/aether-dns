@@ -6,12 +6,35 @@ use hickory_proto::rr::{DNSClass, Name, RData, RecordType, rdata::OPT};
 use std::net::IpAddr;
 
 pub const MIN_UDP_PAYLOAD_SIZE: usize = 512;
-const MINIMAL_OPT: [u8; 11] = [0, 0, 41, 2, 0, 0, 0, 0, 0, 0, 0];
+const MINIMAL_OPT_LEN: usize = 11;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UdpBudget {
     pub max_size: usize,
     pub client_edns: bool,
+    pub client_do: bool,
+}
+
+fn minimal_opt_bytes(ext_rcode: u8, do_bit: bool) -> [u8; MINIMAL_OPT_LEN] {
+    [
+        0,
+        0,
+        41,
+        2,
+        0,
+        ext_rcode,
+        0,
+        if do_bit { 0x80 } else { 0 },
+        0,
+        0,
+        0,
+    ]
+}
+
+fn minimal_edns(do_bit: bool) -> Edns {
+    let mut edns = Edns::new();
+    edns.set_dnssec_ok(do_bit);
+    edns
 }
 
 #[derive(Debug)]
@@ -212,16 +235,26 @@ pub fn synthetic_nodata(wire: &mut Vec<u8>) -> Result<(), WireError> {
 
 /// Effective UDP DNS payload budget advertised by this client query.
 /// Distinguishes "no EDNS (512 bytes)" from "EDNS present (advertised size,
-/// clamped to at least 512 bytes per RFC 6891 section 6.2.3)".
+/// clamped to at least 512 bytes per RFC 6891 section 6.2.3)" and records
+/// whether the client set the DNSSEC OK (DO) bit.
 pub fn udp_budget(query: &[u8]) -> UdpBudget {
     match Message::from_vec(query) {
-        Ok(message) if message.extensions().is_some() => UdpBudget {
-            max_size: usize::from(message.max_payload()),
-            client_edns: true,
+        Ok(message) => match message.extensions().as_ref() {
+            Some(edns) => UdpBudget {
+                max_size: usize::from(message.max_payload()),
+                client_edns: true,
+                client_do: edns.flags().dnssec_ok,
+            },
+            None => UdpBudget {
+                max_size: MIN_UDP_PAYLOAD_SIZE,
+                client_edns: false,
+                client_do: false,
+            },
         },
-        _ => UdpBudget {
+        Err(_) => UdpBudget {
             max_size: MIN_UDP_PAYLOAD_SIZE,
             client_edns: false,
+            client_do: false,
         },
     }
 }
@@ -229,51 +262,72 @@ pub fn udp_budget(query: &[u8]) -> UdpBudget {
 /// Ensure a DNS wire response fits within the client's UDP payload budget
 /// without slicing raw bytes or corrupting records.
 ///
-/// - For non-EDNS clients, responses already within `max_size` are untouched.
+/// - For non-EDNS clients, normal responses omit OPT (while extended RCODEs
+///   that cannot fit in 4 header bits never silently downgrade to NOERROR).
 /// - For EDNS clients, final wire size is evaluated including a minimal
-///   response OPT record (synthesizing one when absent, without copying client
-///   OPT options), and OPT is never dropped merely because extended RCODE is 0.
+///   response OPT record whose DO bit follows the client query (without
+///   copying client options), and OPT is never dropped merely because extended
+///   RCODE is 0.
 /// - If omitting optional non-OPT additional records or optional EDNS OPT
 ///   options (such as padding) is sufficient to fit, `TC` is not forced to 1.
-/// - Extended RCODEs carried in OPT are never dropped so an error response is
-///   never misreported as success.
 /// - When required sections (plus minimal OPT if required) still exceed
 ///   `max_size`, returns a valid, parseable `TC=1` response preserving client
 ///   ID, Question, flags, minimal OPT (when applicable), and full RCODE.
 pub fn enforce_udp_limit(response: &mut Vec<u8>, budget: UdpBudget) {
     let limit = budget.max_size.max(MIN_UDP_PAYLOAD_SIZE);
 
-    if !budget.client_edns && response.len() <= limit {
+    if !budget.client_edns
+        && response.len() <= limit
+        && (response.len() < 12 || word(response, 10) == Ok(0))
+    {
         return;
     }
 
     if budget.client_edns
         && response.len() >= 12
         && word(response, 10) == Ok(0)
-        && response.len() + MINIMAL_OPT.len() <= limit
+        && response.len() + MINIMAL_OPT_LEN <= limit
     {
         response[10..12].copy_from_slice(&1u16.to_be_bytes());
-        response.extend_from_slice(&MINIMAL_OPT);
+        response.extend_from_slice(&minimal_opt_bytes(0, budget.client_do));
         return;
     }
 
     if let Ok(mut message) = Message::from_vec(response) {
-        if budget.client_edns && message.extensions().is_some() && response.len() <= limit {
-            return;
-        }
-
-        if budget.client_edns && message.extensions().is_none() {
-            message.set_edns(Edns::new());
-            if try_replace_if_fits(response, &message, limit) {
-                return;
-            }
-        }
-
         let has_extended_rcode = message
             .extensions()
             .as_ref()
             .is_some_and(|edns| edns.rcode_high() != 0);
         let must_keep_opt = budget.client_edns || has_extended_rcode;
+
+        if !must_keep_opt && message.extensions().is_some() {
+            *message.extensions_mut() = None;
+            if try_replace_if_fits(response, &message, limit) {
+                return;
+            }
+        } else if !budget.client_edns && response.len() <= limit {
+            return;
+        }
+
+        if budget.client_edns {
+            match message.extensions_mut() {
+                Some(edns) => {
+                    if edns.flags().dnssec_ok == budget.client_do && response.len() <= limit {
+                        return;
+                    }
+                    edns.set_dnssec_ok(budget.client_do);
+                    if try_replace_if_fits(response, &message, limit) {
+                        return;
+                    }
+                }
+                None => {
+                    message.set_edns(minimal_edns(budget.client_do));
+                    if try_replace_if_fits(response, &message, limit) {
+                        return;
+                    }
+                }
+            }
+        }
 
         if !message.additionals().is_empty() {
             message.take_additionals();
@@ -291,19 +345,17 @@ pub fn enforce_udp_limit(response: &mut Vec<u8>, budget: UdpBudget) {
             }
         }
 
-        if !must_keep_opt && message.extensions().is_some() {
-            *message.extensions_mut() = None;
-            if try_replace_if_fits(response, &message, limit) {
-                return;
-            }
-        }
-
         message.set_truncated(true);
         message.take_answers();
         message.take_name_servers();
         message.take_additionals();
         if must_keep_opt {
-            let edns = message.extensions_mut().get_or_insert_with(Edns::new);
+            let edns = message
+                .extensions_mut()
+                .get_or_insert_with(|| minimal_edns(budget.client_do));
+            if budget.client_edns {
+                edns.set_dnssec_ok(budget.client_do);
+            }
             *edns.options_mut() = OPT::default();
         } else {
             *message.extensions_mut() = None;
@@ -313,7 +365,7 @@ pub fn enforce_udp_limit(response: &mut Vec<u8>, budget: UdpBudget) {
         }
     }
 
-    fallback_truncate_wire(response, limit, budget.client_edns);
+    fallback_truncate_wire(response, limit, budget.client_edns, budget.client_do);
 }
 
 fn try_replace_if_fits(response: &mut Vec<u8>, message: &Message, limit: usize) -> bool {
@@ -326,7 +378,7 @@ fn try_replace_if_fits(response: &mut Vec<u8>, message: &Message, limit: usize) 
     false
 }
 
-fn fallback_truncate_wire(response: &mut Vec<u8>, limit: usize, keep_opt: bool) {
+fn fallback_truncate_wire(response: &mut Vec<u8>, limit: usize, keep_opt: bool, do_bit: bool) {
     if response.len() < 12 {
         return;
     }
@@ -348,8 +400,8 @@ fn fallback_truncate_wire(response: &mut Vec<u8>, limit: usize, keep_opt: bool) 
     response[4..6].copy_from_slice(&kept_questions.to_be_bytes());
     response[6..12].fill(0);
     response.truncate(end);
-    if (keep_opt || ext_rcode != 0) && response.len() + MINIMAL_OPT.len() <= limit {
+    if (keep_opt || ext_rcode != 0) && response.len() + MINIMAL_OPT_LEN <= limit {
         response[10..12].copy_from_slice(&1u16.to_be_bytes());
-        response.extend_from_slice(&[0, 0, 41, 2, 0, ext_rcode, 0, 0, 0, 0, 0]);
+        response.extend_from_slice(&minimal_opt_bytes(ext_rcode, keep_opt && do_bit));
     }
 }
